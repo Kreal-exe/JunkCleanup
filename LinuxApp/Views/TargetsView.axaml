@@ -1,0 +1,150 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:JunkCleanup.Controls"
+             xmlns:loc="clr-namespace:JunkCleanup.Localization"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="JunkCleanup.Views.TargetsView">
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- header -->
+        <StackPanel Margin="32,6,32,14">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{loc:Str targets.title}" Classes="h1" />
+                    <TextBlock Text="{Binding TargetsSubtitle}" Classes="muted" Margin="0,4,0,0" />
+                </StackPanel>
+                <TextBox Grid.Column="1" Classes="search" Width="320" VerticalAlignment="Center"
+                         Watermark="{loc:Str targets.search}" Text="{Binding SearchText}">
+                    <TextBox.InnerLeftContent>
+                        <mi:MaterialIcon Kind="Magnify" Width="18" Height="18" Margin="12,0,0,0" Foreground="{DynamicResource Brush.TextMuted}" />
+                    </TextBox.InnerLeftContent>
+                </TextBox>
+            </Grid>
+            <Grid Margin="0,18,0,0" ColumnDefinitions="*,Auto">
+                <WrapPanel>
+                    <Button Classes="chip" Classes.active="{Binding FilterName, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=All}"
+                            Content="{loc:Str cat.all}" Command="{Binding SetFilterCommand}" CommandParameter="All" />
+                    <Button Classes="chip" Classes.active="{Binding FilterName, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=System}"
+                            Content="{loc:Str cat.System}" Command="{Binding SetFilterCommand}" CommandParameter="System" />
+                    <Button Classes="chip" Classes.active="{Binding FilterName, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=Browsers}"
+                            Content="{loc:Str cat.Browsers}" Command="{Binding SetFilterCommand}" CommandParameter="Browsers" />
+                    <Button Classes="chip" Classes.active="{Binding FilterName, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=Developer}"
+                            Content="{loc:Str cat.Developer}" Command="{Binding SetFilterCommand}" CommandParameter="Developer" />
+                    <Button Classes="chip" Classes.active="{Binding FilterName, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=Apps}"
+                            Content="{loc:Str cat.Apps}" Command="{Binding SetFilterCommand}" CommandParameter="Apps" />
+                    <Button Classes="chip" Classes.active="{Binding FilterName, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=Gaming}"
+                            Content="{loc:Str cat.Gaming}" Command="{Binding SetFilterCommand}" CommandParameter="Gaming" />
+                    <Button Classes="chip" Classes.active="{Binding FilterName, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=Custom}"
+                            Content="{loc:Str cat.Custom}" Command="{Binding SetFilterCommand}" CommandParameter="Custom" />
+                </WrapPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                    <TextBlock Text="{loc:Str dash.select}" Classes="caption" VerticalAlignment="Center" Margin="0,0,4,0" />
+                    <Button Classes="subtle" Content="{loc:Str dash.selectSafe}" Command="{Binding SelectSafeCommand}" />
+                    <Button Classes="subtle" Content="{loc:Str dash.selectAll}" Command="{Binding SelectAllCommand}" />
+                    <Button Classes="subtle" Content="{loc:Str dash.selectNone}" Command="{Binding SelectNoneCommand}" />
+                </StackPanel>
+            </Grid>
+        </StackPanel>
+
+        <!-- list -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="32,2,32,28">
+                <ItemsControl ItemsSource="{Binding VisibleTargets}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Panel Classes="rise" Margin="0,0,0,10" Opacity="{Binding PresentOpacity}">
+                                <!-- a click on the row opens the target's details sheet -->
+                                <Button Classes="cardButton flat" Padding="18,14" CornerRadius="16" ToolTip.Tip="{loc:Str details.open}"
+                                        Command="{Binding $parent[UserControl].DataContext.OpenDetailsCommand}" CommandParameter="{Binding}">
+                                    <Grid RowDefinitions="Auto,Auto">
+                                        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
+                                            <CheckBox Classes="check" IsChecked="{Binding IsEnabled}" IsEnabled="{Binding IsPresent}" Margin="0,0,16,0" />
+                                            <Border Grid.Column="1" Classes="tile" Width="38" Height="38" CornerRadius="11"
+                                                    Background="{Binding Category, Converter={x:Static c:PaletteConverter.Instance}, ConverterParameter=Soft}">
+                                                <mi:MaterialIcon Kind="{Binding Glyph, Converter={x:Static c:IconConverter.Instance}}" Width="18" Height="18"
+                                                                 Foreground="{Binding Category, Converter={x:Static c:PaletteConverter.Instance}}" />
+                                            </Border>
+                                            <StackPanel Grid.Column="2" Margin="14,0,16,0" VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name}" FontSize="14.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                    <Border Classes="pill" Margin="10,0,0,0" ToolTip.Tip="{Binding RiskHint}"
+                                                            Background="{Binding Risk, Converter={x:Static c:PaletteConverter.Instance}, ConverterParameter=Soft}">
+                                                        <TextBlock Text="{Binding RiskText}" FontSize="11" FontWeight="SemiBold"
+                                                                   Foreground="{Binding Risk, Converter={x:Static c:PaletteConverter.Instance}}" />
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Description}" Classes="muted" FontSize="12.5" TextTrimming="CharacterEllipsis" Margin="0,3,0,0" />
+                                                <TextBlock Text="{Binding RootsText}" Classes="caption" FontSize="11" TextTrimming="CharacterEllipsis"
+                                                           Margin="0,4,0,0" ToolTip.Tip="{Binding RootsText}" />
+                                            </StackPanel>
+                                            <Panel Grid.Column="3" VerticalAlignment="Center" Margin="0,0,18,0">
+                                                <TextBlock Text="{Binding StatusText}" Classes="caption" IsVisible="{Binding !IsDenied}" />
+                                                <TextBlock Text="{Binding StatusText}" Classes="caption" Foreground="{DynamicResource Brush.Warning}" IsVisible="{Binding IsDenied}" />
+                                            </Panel>
+                                            <StackPanel Grid.Column="4" VerticalAlignment="Center" MinWidth="96">
+                                                <c:CounterText Bytes="{Binding Bytes}" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Right" />
+                                                <TextBlock Text="{Binding FilesText}" Classes="caption" HorizontalAlignment="Right" />
+                                            </StackPanel>
+                                            <Button Grid.Column="5" Classes="icon" Margin="12,0,0,0"
+                                                    Command="{Binding $parent[UserControl].DataContext.ToggleExpandCommand}" CommandParameter="{Binding}">
+                                                <Panel>
+                                                    <mi:MaterialIcon Kind="ChevronDown" Width="20" Height="20" IsVisible="{Binding !IsExpanded}" />
+                                                    <mi:MaterialIcon Kind="ChevronUp" Width="20" Height="20" IsVisible="{Binding IsExpanded}" />
+                                                </Panel>
+                                            </Button>
+                                        </Grid>
+
+                                        <!-- expanded details -->
+                                        <StackPanel Grid.Row="1" Margin="68,16,0,4" IsVisible="{Binding IsExpanded}" Classes="rise">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Text="{loc:Str targets.topEntries}" Classes="caption" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <ItemsControl Grid.Column="1" ItemsSource="{Binding Roots}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel HorizontalAlignment="Right" />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Button Classes="subtle" Padding="8,4" Margin="4,0,0,0" ToolTip.Tip="{Binding}"
+                                                                    Command="{Binding $parent[UserControl].DataContext.OpenFolderCommand}" CommandParameter="{Binding}">
+                                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                                    <mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14" />
+                                                                    <TextBlock Text="{loc:Str targets.openFolder}" FontSize="12" />
+                                                                </StackPanel>
+                                                            </Button>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Grid>
+                                            <ItemsControl ItemsSource="{Binding TopEntries}" Margin="0,8,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Panel Height="30" Margin="0,2">
+                                                            <c:SmoothBar Value="{Binding Share}" Fill="{DynamicResource Brush.AccentSoft}" Track="{DynamicResource Brush.Inset}" Height="30" Duration="600" />
+                                                            <Grid Margin="10,0" ColumnDefinitions="Auto,*,Auto,90">
+                                                                <mi:MaterialIcon Kind="{Binding Glyph, Converter={x:Static c:IconConverter.Instance}}" Width="14" Height="14"
+                                                                                 Foreground="{DynamicResource Brush.TextMuted}" />
+                                                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12.5" Margin="10,0,10,0" VerticalAlignment="Center"
+                                                                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Path}" />
+                                                                <TextBlock Grid.Column="2" Text="{Binding FilesText}" Classes="caption" VerticalAlignment="Center" Margin="0,0,14,0" />
+                                                                <TextBlock Grid.Column="3" Text="{Binding Bytes, Converter={x:Static c:BytesConverter.Instance}}" FontSize="12.5" FontWeight="SemiBold"
+                                                                           HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                            </Grid>
+                                                        </Panel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <TextBlock Text="{loc:Str targets.noEntries}" Classes="caption" Margin="0,8,0,0" IsVisible="{Binding !HasEntries}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+                            </Panel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="{loc:Str targets.notFound}" Classes="muted" Margin="4,12,0,0" IsVisible="{Binding IsTargetsViewEmpty}" />
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

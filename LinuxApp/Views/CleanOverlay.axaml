@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:JunkCleanup.Controls"
+             xmlns:loc="clr-namespace:JunkCleanup.Localization"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="JunkCleanup.Views.CleanOverlay">
+    <Grid Background="{DynamicResource Brush.Overlay}">
+        <Border Classes="sheet" Width="560" Padding="36,32" CornerRadius="24" Background="{DynamicResource Brush.CardSolid}"
+                BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1"
+                HorizontalAlignment="Center" VerticalAlignment="Center" BoxShadow="0 18 56 0 #80000000">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Panel>
+                        <Border Classes="tile" Width="44" Height="44" CornerRadius="14" Background="{DynamicResource Brush.AccentSoft}" IsVisible="{Binding !CleanDone}">
+                            <c:RingArc Width="22" Height="22" StrokeThickness="3" Stroke="{DynamicResource Brush.Accent}" IsSpinning="True" />
+                        </Border>
+                        <Border Classes="tile" Width="44" Height="44" CornerRadius="14" Background="{DynamicResource Brush.SuccessSoft}" IsVisible="{Binding CleanDone}">
+                            <mi:MaterialIcon Kind="CheckBold" Width="22" Height="22" Foreground="{DynamicResource Brush.Success}" />
+                        </Border>
+                    </Panel>
+                    <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
+                        <Panel>
+                            <TextBlock Text="{loc:Str clean.title}" Classes="h2" FontSize="22" IsVisible="{Binding !CleanDone}" />
+                            <TextBlock Text="{loc:Str clean.done}" Classes="h2" FontSize="22" IsVisible="{Binding CleanDone}" />
+                        </Panel>
+                        <TextBlock Text="{Binding CleanCurrent}" Classes="caption" Margin="0,2,0,0" IsVisible="{Binding !CleanDone}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,22,0,0">
+                    <c:CounterText Bytes="{Binding CleanFreed}" Part="Number" Duration="500" FontSize="52" FontWeight="Bold" />
+                    <c:CounterText Bytes="{Binding CleanFreed}" Part="Unit" Duration="500" FontSize="18" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Bottom" Margin="8,0,0,12" />
+                    <TextBlock Text="{loc:Str clean.freed}" Classes="muted" VerticalAlignment="Bottom" Margin="10,0,0,13" />
+                </StackPanel>
+                <c:SmoothBar Value="{Binding CleanProgress}" Fill="{DynamicResource Brush.AccentGradient}" Track="{DynamicResource Brush.Track}" Height="8" Margin="0,18,0,0" Duration="450" />
+                <TextBlock Text="{Binding CleanSummary}" Classes="muted" TextWrapping="Wrap" Margin="0,14,0,0" IsVisible="{Binding CleanDone}" />
+
+                <ScrollViewer MaxHeight="220" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding CleanLog}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,4" ColumnDefinitions="Auto,*,Auto" Classes="rise">
+                                    <mi:MaterialIcon Kind="CheckBold" Width="14" Height="14" Foreground="{DynamicResource Brush.Success}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="13" Margin="12,0,12,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                        <TextBlock Text="{Binding FailedText}" Classes="caption" Foreground="{DynamicResource Brush.Warning}" VerticalAlignment="Center" IsVisible="{Binding HasFailed}" />
+                                        <TextBlock Text="{loc:Str clean.skipped}" Classes="caption" Foreground="{DynamicResource Brush.Warning}" Margin="4,0,12,0"
+                                                   VerticalAlignment="Center" IsVisible="{Binding HasFailed}" />
+                                        <TextBlock Text="{Binding Bytes, Converter={x:Static c:BytesConverter.Instance}}" FontSize="13" FontWeight="SemiBold"
+                                                   VerticalAlignment="Center" MinWidth="70" TextAlignment="Right" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <Panel Margin="0,24,0,0">
+                    <Button Classes="primary" Content="{loc:Str clean.close}" Command="{Binding CloseCleanOverlayCommand}"
+                            HorizontalAlignment="Right" MinWidth="130" IsVisible="{Binding CleanDone}" />
+                    <Button Classes="ghost" Command="{Binding StopCleanCommand}" IsEnabled="{Binding CanStopClean}"
+                            HorizontalAlignment="Right" MinWidth="110" Padding="18,11" IsVisible="{Binding !CleanDone}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <mi:MaterialIcon Kind="Stop" Width="14" Height="14" />
+                            <TextBlock Text="{loc:Str clean.stop}" />
+                        </StackPanel>
+                    </Button>
+                </Panel>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

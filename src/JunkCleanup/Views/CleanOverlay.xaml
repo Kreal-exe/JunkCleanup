@@ -1,0 +1,136 @@
+<UserControl x:Class="JunkCleanup.Views.CleanOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:JunkCleanup.Controls"
+             xmlns:loc="clr-namespace:JunkCleanup.Localization"
+             xmlns:vm="clr-namespace:JunkCleanup.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DataContext="{d:DesignInstance Type=vm:MainViewModel}">
+
+    <Grid x:Name="Root" Background="{DynamicResource Brush.Overlay}">
+        <Canvas x:Name="Confetti" IsHitTestVisible="False" ClipToBounds="True" />
+
+        <Border x:Name="Card" Width="560" Padding="36,32" CornerRadius="24" Background="{DynamicResource Brush.CardSolid}"
+                BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1"
+                HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+            <Border.RenderTransform>
+                <TransformGroup>
+                    <ScaleTransform x:Name="CardScale" />
+                    <TranslateTransform x:Name="CardT" />
+                </TransformGroup>
+            </Border.RenderTransform>
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="56" ShadowDepth="14" Opacity="0.5" Color="Black" />
+            </Border.Effect>
+
+            <StackPanel>
+                <Grid>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Style="{StaticResource IconTile}" Width="44" Height="44" CornerRadius="14" Background="{DynamicResource Brush.AccentSoft}"
+                                Visibility="{Binding CleanDone, Converter={StaticResource BoolToVisInverse}}">
+                            <c:Arc StrokeThickness="3" Stroke="{DynamicResource Brush.Accent}" StartAngle="0" EndAngle="270" Width="22" Height="22"
+                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round" RenderTransformOrigin="0.5,0.5">
+                                <c:Arc.RenderTransform>
+                                    <RotateTransform />
+                                </c:Arc.RenderTransform>
+                                <c:Arc.Triggers>
+                                    <EventTrigger RoutedEvent="Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)" From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </c:Arc.Triggers>
+                            </c:Arc>
+                        </Border>
+                        <Border Style="{StaticResource IconTile}" Width="44" Height="44" CornerRadius="14" Background="{DynamicResource Brush.SuccessSoft}"
+                                Visibility="{Binding CleanDone, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="&#xE73E;" Style="{StaticResource Glyph}" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource Brush.Success}" />
+                        </Border>
+                        <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{loc:Str clean.title}" Style="{StaticResource H2}" FontSize="22"
+                                       Visibility="{Binding CleanDone, Converter={StaticResource BoolToVisInverse}}" />
+                            <TextBlock Text="{loc:Str clean.done}" Style="{StaticResource H2}" FontSize="22"
+                                       Visibility="{Binding CleanDone, Converter={StaticResource BoolToVis}}" />
+                            <TextBlock Text="{Binding CleanCurrent}" Style="{StaticResource Caption}" Margin="0,2,0,0"
+                                       Visibility="{Binding CleanDone, Converter={StaticResource BoolToVisInverse}}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" Margin="0,22,0,0">
+                    <TextBlock c:Counter.Bytes="{Binding CleanFreed}" c:Counter.Part="Number" c:Counter.Duration="500"
+                               FontFamily="{StaticResource Font.Display}" FontSize="52" FontWeight="Bold" />
+                    <TextBlock c:Counter.Bytes="{Binding CleanFreed}" c:Counter.Part="Unit" c:Counter.Duration="500"
+                               FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Bottom" Margin="8,0,0,12" />
+                    <TextBlock Text="{loc:Str clean.freed}" Style="{StaticResource Muted}" VerticalAlignment="Bottom" Margin="10,0,0,13" />
+                </StackPanel>
+
+                <c:SmoothBar Value="{Binding CleanProgress}" Fill="{DynamicResource Brush.AccentGradient}" Track="{DynamicResource Brush.Track}" Height="8" Margin="0,18,0,0" Duration="450" />
+
+                <TextBlock Text="{Binding CleanSummary}" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,14,0,0"
+                           Visibility="{Binding CleanDone, Converter={StaticResource BoolToVis}}" />
+
+                <ScrollViewer MaxHeight="220" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <!-- fade only: rising from below would cross the row underneath -->
+                    <ItemsControl ItemsSource="{Binding CleanLog}" c:Entrance.Stagger="0" c:Entrance.Distance="0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:CleanLogItem}">
+                                <Grid Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="&#xE73E;" Style="{StaticResource Glyph}" FontSize="12" Foreground="{DynamicResource Brush.Success}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="13" Margin="12,0,12,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Failed, Converter={StaticResource Count}}" Foreground="{DynamicResource Brush.Warning}" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource Caption}">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Failed, Converter={StaticResource GtZero}}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Text="{loc:Str clean.skipped}" Foreground="{DynamicResource Brush.Warning}" Margin="4,0,12,0" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource Caption}">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Failed, Converter={StaticResource GtZero}}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Bytes, Converter={StaticResource Bytes}}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" MinWidth="70" TextAlignment="Right" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <Button Style="{StaticResource PrimaryButton}" Content="{loc:Str clean.close}" Command="{Binding CloseCleanOverlayCommand}"
+                        HorizontalAlignment="Right" Margin="0,24,0,0" MinWidth="130"
+                        Visibility="{Binding CleanDone, Converter={StaticResource BoolToVis}}" />
+                <Button Style="{StaticResource GhostButton}" Command="{Binding StopCleanCommand}" IsEnabled="{Binding CanStopClean}"
+                        HorizontalAlignment="Right" Margin="0,24,0,0" MinWidth="110" Padding="18,11"
+                        Visibility="{Binding CleanDone, Converter={StaticResource BoolToVisInverse}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE71A;" Style="{StaticResource Glyph}" FontSize="12" />
+                        <TextBlock Text="{loc:Str clean.stop}" Margin="8,0,0,0" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

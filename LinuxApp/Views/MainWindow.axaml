@@ -1,0 +1,161 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:JunkCleanup.Controls"
+        xmlns:loc="clr-namespace:JunkCleanup.Localization"
+        xmlns:v="clr-namespace:JunkCleanup.Views"
+        xmlns:vm="clr-namespace:JunkCleanup.ViewModels"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="JunkCleanup.Views.MainWindow"
+        Title="JunkCleanup" Width="1240" Height="800" MinWidth="980" MinHeight="560"
+        WindowStartupLocation="CenterScreen" Icon="avares://JunkCleanup/Assets/icon.png"
+        Background="{DynamicResource Brush.Bg}" Foreground="{DynamicResource Brush.Text}"
+        FontFamily="{StaticResource Font.Body}">
+
+    <!-- Linux keeps the desktop's own title bar (GNOME, KDE and tiling window managers draw it); the app's header sits below it. -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+D1" Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppPage.Dashboard}" />
+        <KeyBinding Gesture="Ctrl+D2" Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppPage.Targets}" />
+        <KeyBinding Gesture="Ctrl+D3" Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppPage.Disk}" />
+        <KeyBinding Gesture="Ctrl+D4" Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppPage.Settings}" />
+        <KeyBinding Gesture="Ctrl+D5" Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppPage.About}" />
+        <KeyBinding Gesture="F5" Command="{Binding ToggleScanCommand}" />
+        <KeyBinding Gesture="Escape" Command="{Binding CancelScanCommand}" />
+    </Window.KeyBindings>
+
+    <Grid x:Name="Root" ClipToBounds="True" Classes.motion="{Binding Settings.Animations}">
+
+        <!-- ambient background -->
+        <Grid IsHitTestVisible="False" ClipToBounds="True">
+            <Ellipse Classes="blob1" Width="820" Height="820" Fill="{DynamicResource Brush.Blob1}"
+                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-220,-320,0,0" />
+            <Ellipse Classes="blob2" Width="720" Height="720" Fill="{DynamicResource Brush.Blob2}"
+                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-260,-200,0" />
+            <Ellipse Classes="blob3" Width="640" Height="640" Fill="{DynamicResource Brush.Blob3}"
+                     HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,120,-380" />
+        </Grid>
+
+        <Grid RowDefinitions="60,*" ColumnDefinitions="236,*">
+
+            <!-- header -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="22,0,0,0" VerticalAlignment="Center" Spacing="10">
+                <v:Logo Width="26" Height="26" />
+                <TextBlock Text="{loc:Str app.name}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Margin="0,0,22,0" Spacing="10">
+                <Border Classes="pill" Background="{DynamicResource Brush.WarningSoft}" IsVisible="{Binding IsElevated}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <mi:MaterialIcon Kind="ShieldCheckOutline" Width="13" Height="13" Foreground="{DynamicResource Brush.Warning}" />
+                        <TextBlock Text="root" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Warning}" />
+                    </StackPanel>
+                </Border>
+                <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{loc:Str titlebar.theme}">
+                    <Panel>
+                        <mi:MaterialIcon Kind="WeatherNight" Width="18" Height="18" IsVisible="{Binding IsDarkTheme}" />
+                        <mi:MaterialIcon Kind="WhiteBalanceSunny" Width="18" Height="18" IsVisible="{Binding !IsDarkTheme}" />
+                    </Panel>
+                </Button>
+            </StackPanel>
+
+            <!-- sidebar -->
+            <Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*,Auto">
+                <Panel Margin="0,6,0,0">
+                    <StackPanel>
+                        <Button Classes="nav" Classes.active="{Binding IsDashboardPage}" Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppPage.Dashboard}" Margin="12,0,12,4">
+                            <StackPanel Orientation="Horizontal" Spacing="14">
+                                <mi:MaterialIcon Kind="ViewDashboardOutline" Width="19" Height="19" />
+                                <TextBlock Text="{loc:Str nav.dashboard}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="nav" Classes.active="{Binding IsTargetsPage}" Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppPage.Targets}" Margin="12,0,12,4">
+                            <StackPanel Orientation="Horizontal" Spacing="14">
+                                <mi:MaterialIcon Kind="FormatListBulleted" Width="19" Height="19" />
+                                <TextBlock Text="{loc:Str nav.targets}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="nav" Classes.active="{Binding IsDiskPage}" Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppPage.Disk}" Margin="12,0,12,4">
+                            <StackPanel Orientation="Horizontal" Spacing="14">
+                                <mi:MaterialIcon Kind="ChartDonut" Width="19" Height="19" />
+                                <TextBlock Text="{loc:Str nav.disk}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="nav" Classes.active="{Binding IsSettingsPage}" Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppPage.Settings}" Margin="12,0,12,4">
+                            <StackPanel Orientation="Horizontal" Spacing="14">
+                                <mi:MaterialIcon Kind="CogOutline" Width="19" Height="19" />
+                                <TextBlock Text="{loc:Str nav.settings}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="nav" Classes.active="{Binding IsAboutPage}" Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppPage.About}" Margin="12,0,12,4">
+                            <StackPanel Orientation="Horizontal" Spacing="14">
+                                <mi:MaterialIcon Kind="InformationOutline" Width="19" Height="19" />
+                                <TextBlock Text="{loc:Str nav.about}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <!-- sliding accent indicator: one 48 px row per page -->
+                    <Border Width="4" Height="22" CornerRadius="2" Background="{DynamicResource Brush.AccentGradient}"
+                            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4,11,0,0" IsHitTestVisible="False"
+                            BoxShadow="0 0 12 0 #CC7C6CFF"
+                            RenderTransform="{Binding CurrentPage, Converter={x:Static c:PageOffsetConverter.Instance}}">
+                        <Border.Transitions>
+                            <Transitions>
+                                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.35" Easing="BackEaseOut" />
+                            </Transitions>
+                        </Border.Transitions>
+                    </Border>
+                </Panel>
+
+                <!-- disk card -->
+                <Border Grid.Row="2" Classes="card" Margin="16,0,16,20" Padding="16" CornerRadius="16">
+                    <StackPanel>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <mi:MaterialIcon Kind="Harddisk" Width="16" Height="16" Foreground="{DynamicResource Brush.Accent}" />
+                                <TextBlock Text="{Binding DiskName}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="90" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding DiskFreeText}" Classes="caption" VerticalAlignment="Center" />
+                        </Grid>
+                        <c:SmoothBar Value="{Binding DiskShare}" Fill="{DynamicResource Brush.AccentGradient}" Track="{DynamicResource Brush.Track}" Height="6" Margin="0,12,0,8" />
+                        <TextBlock Text="{Binding DiskText}" Classes="caption" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding LifetimeText}" Classes="caption" TextWrapping="Wrap" Foreground="{DynamicResource Brush.Success}" Margin="0,4,0,0"
+                                   IsVisible="{Binding HasLifetime}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- pages -->
+            <Panel Grid.Row="1" Grid.Column="1">
+                <v:DashboardView Classes="page" IsVisible="{Binding IsDashboardPage}" />
+                <v:TargetsView Classes="page" IsVisible="{Binding IsTargetsPage}" />
+                <!-- its own DataContext is the Disk view model, so the visibility binds to the window's -->
+                <v:DiskView Classes="page" IsVisible="{Binding #Root.DataContext.IsDiskPage}" DataContext="{Binding Disk}" />
+                <v:SettingsView Classes="page" IsVisible="{Binding IsSettingsPage}" />
+                <v:AboutView Classes="page" IsVisible="{Binding IsAboutPage}" />
+            </Panel>
+        </Grid>
+
+        <!-- overlays -->
+        <v:CleanOverlay IsVisible="{Binding IsCleanOverlayVisible}" />
+        <v:DetailsSheet IsVisible="{Binding IsDetailsOpen}" />
+        <v:ConfirmDialog x:Name="Confirm" IsVisible="False" />
+
+        <!-- toast -->
+        <Border x:Name="Toast" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,70,28,0" Padding="16,12"
+                CornerRadius="14" Background="{DynamicResource Brush.Popup}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1"
+                BoxShadow="0 6 28 0 #59000000" Opacity="0" IsHitTestVisible="False" RenderTransform="translateY(-12px)">
+            <Border.Transitions>
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.25" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.35" Easing="BackEaseOut" />
+                </Transitions>
+            </Border.Transitions>
+            <StackPanel Orientation="Horizontal">
+                <Border Width="30" Height="30" CornerRadius="9" Background="{DynamicResource Brush.SuccessSoft}">
+                    <mi:MaterialIcon x:Name="ToastIcon" Kind="CheckBold" Width="15" Height="15" Foreground="{DynamicResource Brush.Success}" />
+                </Border>
+                <TextBlock x:Name="ToastText" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,4,0" MaxWidth="420" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

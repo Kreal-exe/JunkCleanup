@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=JunkCleanup
+GenericName=Cache Cleaner
+Comment=Reclaim your disk: a fast, beautiful cache and junk cleaner
+Exec=JunkCleanup
+Icon=junkcleanup
+Terminal=false
+Categories=Utility;System;
+Keywords=cache;clean;junk;disk;space;trash;
+StartupWMClass=JunkCleanup

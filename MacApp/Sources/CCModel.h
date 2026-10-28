@@ -1,0 +1,152 @@
+// The app state of ViewModels/MainViewModel.cs: targets, categories, scanning, cleaning. Views listen for
+// CCModelDidChangeNotification and pull what they show.
+#import <Foundation/Foundation.h>
+#import "CCCore.h"
+#import "CCEngine.h"
+#import "CCInsights.h"
+#import "CCSettings.h"
+
+NS_ASSUME_NONNULL_BEGIN
+
+FOUNDATION_EXPORT NSNotificationName const CCModelDidChangeNotification;
+FOUNDATION_EXPORT NSNotificationName const CCModelScanStateNotification;
+FOUNDATION_EXPORT NSNotificationName const CCModelCleanStateNotification;
+FOUNDATION_EXPORT NSNotificationName const CCModelInsightsNotification;
+FOUNDATION_EXPORT NSNotificationName const CCModelPageNotification;
+/// userInfo: "symbol", "text".
+FOUNDATION_EXPORT NSNotificationName const CCModelToastNotification;
+FOUNDATION_EXPORT NSNotificationName const CCModelCustomFoldersNotification;
+FOUNDATION_EXPORT NSNotificationName const CCModelDetailsNotification;
+
+typedef NS_ENUM(NSInteger, CCPage) { CCPageDashboard, CCPageTargets, CCPageDisk, CCPageSettings, CCPageAbout };
+typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTargetDone, CCTargetDenied, CCTargetError };
+
+@interface CCTargetItem : NSObject
+@property (nonatomic, strong, readonly) CCTarget *target;
+@property (nonatomic, copy, readonly) NSString *identifier;
+@property (nonatomic, copy) NSArray<NSString *> *roots;
+@property (nonatomic, readonly) BOOL isPresent;
+@property (nonatomic) BOOL enabled;
+@property (nonatomic) long long bytes;
+@property (nonatomic) NSInteger fileCount;
+@property (nonatomic) CCTargetState state;
+@property (nonatomic, copy, nullable) NSString *error;
+@property (nonatomic) BOOL expanded;
+@property (nonatomic) double share;
+@property (nonatomic, copy) NSArray<CCEntry *> *topEntries;
+@property (nonatomic, strong, nullable) CCScanResult *lastResult;
+
+@property (nonatomic, readonly) NSString *name;
+@property (nonatomic, readonly) NSString *details;
+@property (nonatomic, readonly) NSString *riskText;
+@property (nonatomic, readonly) NSString *riskHint;
+@property (nonatomic, readonly) NSString *rootsText;
+@property (nonatomic, readonly) NSString *statusText;
+@property (nonatomic, readonly) BOOL showsAccessBadge;
+@end
+
+@interface CCCategoryItem : NSObject
+@property (nonatomic, readonly) CCCategory category;
+@property (nonatomic, copy) NSArray<CCTargetItem *> *targets;
+@property (nonatomic, readonly) NSString *name;
+@property (nonatomic, readonly) NSString *symbol;
+@property (nonatomic) long long bytes;
+/// What of it is ticked for cleaning.
+@property (nonatomic) long long selectedBytes;
+@property (nonatomic) long long fileCount;
+@property (nonatomic) NSInteger presentCount;
+@property (nonatomic) double share;
+@property (nonatomic) BOOL enabled;
+@end
+
+@interface CCCleanLogItem : NSObject
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic) long long bytes;
+@property (nonatomic) NSInteger failed;
+@end
+
+@interface CCModel : NSObject
+@property (class, nonatomic, readonly) CCModel *shared;
+@property (nonatomic, strong, readonly) CCSettings *settings;
+
+@property (nonatomic, readonly) NSArray<CCTargetItem *> *targets;
+@property (nonatomic, readonly) NSArray<CCCategoryItem *> *categories;
+@property (nonatomic, readonly) NSArray<CCTargetItem *> *topTargets;
+@property (nonatomic, readonly) NSArray<CCInsight *> *insights;
+
+@property (nonatomic) CCPage page;
+@property (nonatomic, copy) NSString *searchText;
+/// "All" or a category name.
+@property (nonatomic, copy) NSString *filter;
+- (BOOL)targetMatchesFilter:(CCTargetItem *)target;
+
+// scanning
+@property (nonatomic, readonly) BOOL scanning;
+@property (nonatomic, readonly) BOOL hasResults;
+@property (nonatomic, readonly) BOOL nothingFound;
+@property (nonatomic, readonly) NSString *statusText;
+@property (nonatomic, readonly) NSString *currentTargetName;
+@property (nonatomic, readonly) long long displayBytes;
+@property (nonatomic, readonly) long long foundBytes;
+@property (nonatomic, readonly) long long selectedBytes;
+@property (nonatomic, readonly) NSInteger selectedCount;
+@property (nonatomic, readonly) NSInteger presentCount;
+@property (nonatomic, readonly) double ringAngle;
+@property (nonatomic, readonly) BOOL canClean;
+
+// disk
+@property (nonatomic, readonly) NSString *diskName;
+@property (nonatomic, readonly) long long diskUsed, diskTotal, diskFree;
+@property (nonatomic, readonly) long long lifetimeFreed;
+@property (nonatomic, readonly) BOOL hasFullDiskAccess;
+
+// cleaning
+@property (nonatomic, readonly) BOOL overlayVisible;
+@property (nonatomic, readonly) BOOL cleaning;
+@property (nonatomic, readonly) BOOL cleanDone;
+/// Stop was pressed; the running target finishes its current file and the rest are left alone.
+@property (nonatomic, readonly) BOOL cleanStopping;
+@property (nonatomic, readonly) long long cleanFreed;
+@property (nonatomic, readonly) double cleanProgress;
+@property (nonatomic, readonly) NSString *cleanCurrent;
+@property (nonatomic, readonly) NSString *cleanSummary;
+@property (nonatomic, readonly) NSArray<CCCleanLogItem *> *cleanLog;
+
+/// Asks before cleaning; the block answers with YES to go ahead.
+@property (nonatomic, copy, nullable) void (^confirm)(NSString *title, NSString *body, NSString *okText, BOOL danger, void (^answer)(BOOL ok));
+
+- (void)toggleScan;
+- (void)startScan;
+- (void)cancelScan;
+- (void)clean;
+- (void)cancelClean;
+- (void)closeCleanOverlay;
+- (void)selectSafe;
+- (void)selectAll;
+- (void)selectNone;
+- (void)setTarget:(CCTargetItem *)target enabled:(BOOL)enabled;
+- (void)setCategory:(CCCategoryItem *)category enabled:(BOOL)enabled;
+- (void)openCategory:(CCCategoryItem *)category;
+- (void)toggleExpanded:(CCTargetItem *)target;
+
+// The details sheet: a target's entries, each removable on its own.
+@property (nonatomic, strong, readonly, nullable) CCTargetItem *detailsTarget;
+- (void)openDetails:(CCTargetItem *)target;
+- (void)closeDetails;
+- (void)revealPath:(NSString *)path;
+/// Moves one entry to the Trash (or deletes it, per the setting); the answer arrives on the main thread.
+- (void)deleteEntry:(CCEntry *)entry ofTarget:(CCTargetItem *)target completion:(void (^)(BOOL ok))completion;
+- (void)runInsightAction:(CCInsight *)insight;
+- (void)refreshInsights;
+/// Space freed outside a clean (the Disk page), added to the all-time total.
+- (void)addFreed:(long long)bytes;
+- (void)refreshDisk;
+- (void)refreshAccess;
+- (void)openFullDiskAccessSettings;
+- (void)addCustomFolder:(NSString *)folder refused:(void (^)(void))refused;
+- (void)removeCustomFolder:(NSString *)folder;
+- (void)resetSettings;
+- (void)saveSettings;
+@end
+
+NS_ASSUME_NONNULL_END

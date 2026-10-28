@@ -1,0 +1,273 @@
+<UserControl x:Class="JunkCleanup.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:JunkCleanup.Controls"
+             xmlns:loc="clr-namespace:JunkCleanup.Localization"
+             xmlns:vm="clr-namespace:JunkCleanup.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DataContext="{d:DesignInstance Type=vm:MainViewModel}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="26,6,26,28" MaxWidth="1320">
+
+            <!-- ───────── hero ───────── -->
+            <Border Style="{StaticResource Card}" Padding="32,30" Margin="6,0" c:Entrance.Delay="0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="36" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="32" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- ring -->
+                    <Grid Width="204" Height="204">
+                        <c:Arc StrokeThickness="14" Stroke="{DynamicResource Brush.Track}" StartAngle="0" EndAngle="360" />
+                        <!-- one arc: the result, or a spinning segment while scanning (DashboardView.xaml.cs) -->
+                        <c:Arc x:Name="ValueArc" StrokeThickness="14" Stroke="{DynamicResource Brush.RingGradient}" StartAngle="0"
+                               StrokeStartLineCap="Round" StrokeEndLineCap="Round" RenderTransformOrigin="0.5,0.5">
+                            <c:Arc.RenderTransform>
+                                <RotateTransform x:Name="RingRotate" />
+                            </c:Arc.RenderTransform>
+                            <c:Arc.Effect>
+                                <DropShadowEffect Color="{DynamicResource Color.Accent}" BlurRadius="28" ShadowDepth="0" Opacity="0.55" />
+                            </c:Arc.Effect>
+                        </c:Arc>
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <TextBlock c:Counter.Bytes="{Binding DisplayBytes}" c:Counter.Part="Number" c:Counter.Duration="900"
+                                           FontFamily="{StaticResource Font.Display}" FontSize="42" FontWeight="Bold" />
+                                <TextBlock c:Counter.Bytes="{Binding DisplayBytes}" c:Counter.Part="Unit" c:Counter.Duration="900"
+                                           FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextMuted}"
+                                           VerticalAlignment="Bottom" Margin="6,0,0,9" />
+                            </StackPanel>
+                            <TextBlock Text="{loc:Str dash.reclaimable}" Style="{StaticResource Caption}" HorizontalAlignment="Center"
+                                       Visibility="{Binding IsScanning, Converter={StaticResource BoolToVisInverse}}" />
+                            <TextBlock Text="{loc:Str dash.foundSoFar}" Style="{StaticResource Caption}" HorizontalAlignment="Center"
+                                       Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- summary -->
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                        <TextBlock Text="{loc:Str dash.title}" Style="{StaticResource H1}" />
+                        <TextBlock Text="{Binding StatusText}" Style="{StaticResource Muted}" Margin="0,6,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding CurrentTargetName}" Style="{StaticResource Caption}" Margin="0,4,0,0"
+                                   Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}" />
+
+                        <c:SegmentBar ItemsSource="{Binding Categories}" Track="{DynamicResource Brush.Track}" Height="12" Margin="0,24,0,14" />
+
+                        <ItemsControl ItemsSource="{Binding Categories}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:CategoryVm}">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,20,6">
+                                        <Ellipse Width="8" Height="8" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Name}" Style="{StaticResource Muted}" FontSize="12.5" Margin="7,0,0,0" VerticalAlignment="Center" />
+                                        <TextBlock c:Counter.Bytes="{Binding Bytes}" FontSize="12.5" FontWeight="SemiBold" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- actions -->
+                    <StackPanel Grid.Column="4" VerticalAlignment="Center" Width="220">
+                        <Button Style="{StaticResource PrimaryButton}" Command="{Binding ToggleScanCommand}" HorizontalAlignment="Stretch">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding ScanButtonGlyph}" Style="{StaticResource Glyph}" FontSize="15" Foreground="{DynamicResource Brush.TextOnAccent}" />
+                                <TextBlock Text="{Binding ScanButtonText}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource DangerButton}" Command="{Binding CleanCommand}" IsEnabled="{Binding CanClean}"
+                                c:Pulse.IsActive="{Binding CanClean}" HorizontalAlignment="Stretch" Margin="0,14,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE74D;" Style="{StaticResource Glyph}" FontSize="15" Foreground="{DynamicResource Brush.TextOnAccent}" />
+                                <TextBlock Text="{Binding CleanButtonText}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,16,0,0">
+                            <TextBlock Text="{Binding DeleteModeGlyph}" Style="{StaticResource Glyph}" FontSize="12" Foreground="{DynamicResource Brush.TextFaint}" />
+                            <TextBlock Text="{Binding DeleteModeText}" Style="{StaticResource Caption}" Margin="7,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ───────── categories ───────── -->
+            <Grid Margin="10,30,10,12" c:Entrance.Delay="90">
+                <TextBlock Text="{loc:Str dash.categories}" Style="{StaticResource H2}" VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBlock Text="{loc:Str dash.select}" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,4,0" />
+                    <Button Style="{StaticResource SubtleButton}" Content="{loc:Str dash.selectSafe}" Command="{Binding SelectSafeCommand}" />
+                    <Button Style="{StaticResource SubtleButton}" Content="{loc:Str dash.selectAll}" Command="{Binding SelectAllCommand}" />
+                    <Button Style="{StaticResource SubtleButton}" Content="{loc:Str dash.selectNone}" Command="{Binding SelectNoneCommand}" />
+                </StackPanel>
+            </Grid>
+
+            <ItemsControl ItemsSource="{Binding Categories}" c:Entrance.Stagger="60">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="3" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:CategoryVm}">
+                        <Border Style="{StaticResource CardHover}" Margin="6" Padding="20,18" Cursor="Hand">
+                            <Border.InputBindings>
+                                <MouseBinding MouseAction="LeftClick"
+                                              Command="{Binding DataContext.OpenCategoryCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                              CommandParameter="{Binding}" />
+                            </Border.InputBindings>
+                            <Grid>
+                                <Border Style="{StaticResource ShimmerOverlay}" CornerRadius="14" Margin="-20,-18"
+                                        Tag="{Binding DataContext.IsScanning, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource IconTileBounce}" Background="{Binding Category, Converter={StaticResource CategoryBrush}, ConverterParameter=Soft}">
+                                        <TextBlock Text="{Binding Glyph}" Style="{StaticResource Glyph}" FontSize="18" Foreground="{Binding Brush}" />
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding PresentCount, Converter={StaticResource LocFormat}, ConverterParameter=dash.targetsCount}" Style="{StaticResource Caption}" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                    <CheckBox Grid.Column="2" Style="{StaticResource Toggle}" IsChecked="{Binding IsEnabled}" />
+                                </Grid>
+                                <WrapPanel Grid.Row="1" Margin="0,18,0,0">
+                                    <TextBlock c:Counter.Bytes="{Binding Bytes}" FontFamily="{StaticResource Font.Display}" FontSize="26" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding FileCount, Converter={StaticResource LocFormat}, ConverterParameter=dash.filesCount}"
+                                               Style="{StaticResource Muted}" Margin="10,0,0,6" VerticalAlignment="Bottom" />
+                                    <TextBlock Text="{Binding SelectedText}" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}"
+                                               Margin="10,0,0,6" VerticalAlignment="Bottom" Visibility="{Binding IsPartlySelected, Converter={StaticResource BoolToVis}}" />
+                                </WrapPanel>
+                                <c:SmoothBar Grid.Row="2" Value="{Binding Share}" Fill="{Binding Brush}" Track="{DynamicResource Brush.Track}" Height="6" Margin="0,14,0,0" />
+                            </Grid>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- ───────── largest targets ───────── -->
+            <Border Style="{StaticResource Card}" Margin="6,22,6,0" Padding="24,22"
+                    Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}" c:Entrance.Replay="{Binding HasResults}">
+                <StackPanel>
+                    <TextBlock Text="{loc:Str dash.largest}" Style="{StaticResource H2}" Margin="0,0,0,14" />
+                    <ItemsControl ItemsSource="{Binding TopTargets}" c:Entrance.Stagger="50">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:TargetVm}">
+                                <!-- a row opens the target's details sheet -->
+                                <Border CornerRadius="12" Padding="10,9" Margin="-10,0" Cursor="Hand" ToolTip="{loc:Str details.open}">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="Transparent" />
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource Brush.Hover}" />
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Border.InputBindings>
+                                        <MouseBinding MouseAction="LeftClick"
+                                                      Command="{Binding DataContext.OpenDetailsCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                      CommandParameter="{Binding}" />
+                                    </Border.InputBindings>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Border Style="{StaticResource IconTile}" Width="34" Height="34" CornerRadius="10"
+                                            Background="{Binding Category, Converter={StaticResource CategoryBrush}, ConverterParameter=Soft}">
+                                        <TextBlock Text="{Binding Glyph}" Style="{StaticResource Glyph}" FontSize="15"
+                                                   Foreground="{Binding Category, Converter={StaticResource CategoryBrush}}" />
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,16,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Description}" Style="{StaticResource Caption}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                        <TextBlock c:Counter.Bytes="{Binding Bytes}" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Right" />
+                                        <TextBlock Text="{Binding FileCount, Converter={StaticResource LocFormat}, ConverterParameter=dash.filesCount}"
+                                                   Style="{StaticResource Caption}" HorizontalAlignment="Right" />
+                                    </StackPanel>
+                                    <c:SmoothBar Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Value="{Binding Share}"
+                                                 Fill="{Binding Category, Converter={StaticResource CategoryBrush}}" Track="{DynamicResource Brush.Track}"
+                                                 Height="5" Margin="14,10,0,0" />
+                                </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{loc:Str dash.allClean}" Style="{StaticResource Muted}" Margin="0,4,0,0"
+                               Visibility="{Binding NothingFound, Converter={StaticResource BoolToVis}}" />
+                </StackPanel>
+            </Border>
+
+            <!-- ───────── insights ───────── -->
+            <Border Style="{StaticResource Card}" Margin="6,16,6,0" Padding="24,22"
+                    Visibility="{Binding HasInsights, Converter={StaticResource BoolToVis}}" c:Entrance.Replay="{Binding HasInsights}">
+                <StackPanel>
+                    <TextBlock Text="{loc:Str insight.title}" Style="{StaticResource H2}" />
+                    <TextBlock Text="{loc:Str insight.subtitle}" Style="{StaticResource Muted}" FontSize="12.5" Margin="0,4,0,12" />
+                    <ItemsControl ItemsSource="{Binding Insights}" c:Entrance.Stagger="60">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:InsightVm}">
+                                <Border CornerRadius="14" Background="{DynamicResource Brush.Inset}" Padding="16,14" Margin="0,0,0,8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Style="{StaticResource IconTile}" Width="38" Height="38" CornerRadius="11" Background="{DynamicResource Brush.WarningSoft}" VerticalAlignment="Top">
+                                            <TextBlock Text="{Binding Glyph}" Style="{StaticResource Glyph}" FontSize="16" Foreground="{DynamicResource Brush.Warning}" />
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Margin="14,0,16,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Detail}" Style="{StaticResource Muted}" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{Binding Bytes, Converter={StaticResource Bytes}}" FontSize="16" FontWeight="SemiBold"
+                                                   VerticalAlignment="Center" Margin="0,0,16,0" />
+                                        <Button Grid.Column="3" Style="{StaticResource GhostButton}" Padding="12,8" VerticalAlignment="Center"
+                                                Visibility="{Binding HasAction, Converter={StaticResource BoolToVis}}"
+                                                Command="{Binding DataContext.RunInsightActionCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding ActionGlyph}" Style="{StaticResource Glyph}" FontSize="12" />
+                                                <TextBlock Text="{Binding ActionText}" Margin="8,0,0,0" FontSize="12.5" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

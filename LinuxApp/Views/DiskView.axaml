@@ -1,0 +1,159 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:JunkCleanup.Controls"
+             xmlns:loc="clr-namespace:JunkCleanup.Localization"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="JunkCleanup.Views.DiskView">
+
+    <UserControl.Resources>
+        <!-- one row: a known item, a part of one, or a discovered folder -->
+        <DataTemplate x:Key="SpaceRow">
+            <Border Classes="entry" CornerRadius="14" Padding="14,12" Margin="0,0,0,8">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto">
+                    <Border Classes="tile" Width="38" Height="38" CornerRadius="11" Background="{Binding SoftBrush}" VerticalAlignment="Top">
+                        <mi:MaterialIcon Kind="{Binding Glyph, Converter={x:Static c:IconConverter.Instance}}" Width="18" Height="18" Foreground="{Binding Brush}" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="14,0,16,0" VerticalAlignment="Center">
+                        <WrapPanel>
+                            <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <Border Classes="pill" Background="{Binding RiskSoftBrush}" ToolTip.Tip="{Binding RiskHint}">
+                                <TextBlock Text="{Binding RiskText}" FontSize="11" FontWeight="SemiBold" Foreground="{Binding RiskBrush}" />
+                            </Border>
+                        </WrapPanel>
+                        <TextBlock Text="{Binding Description}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,0"
+                                   IsVisible="{Binding Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <TextBlock Text="{Binding PathText}" Classes="caption" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"
+                                   ToolTip.Tip="{Binding PathText}" IsVisible="{Binding HasPath}" />
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,5,0,0" IsVisible="{Binding HasSafe}">
+                            <mi:MaterialIcon Kind="ShieldCheckOutline" Width="13" Height="13" Foreground="{DynamicResource Brush.Success}" />
+                            <TextBlock Text="{Binding SafeText}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Success}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center" MinWidth="110" Margin="0,0,12,0">
+                        <c:CounterText Bytes="{Binding Bytes}" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Right" />
+                        <c:SmoothBar Value="{Binding Share}" Fill="{Binding Brush}" Track="{DynamicResource Brush.Track}" Height="5" Margin="0,7,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Spacing="2">
+                        <Button Classes="ghost" Padding="10,6" FontSize="12" IsVisible="{Binding IsCleanable}"
+                                Command="{Binding $parent[UserControl].DataContext.CleanCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="Broom" Width="14" Height="14" />
+                                <TextBlock Text="{loc:Str disk.clean}" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="ghost" Padding="10,6" FontSize="12" IsVisible="{Binding HasCommand}" ToolTip.Tip="{Binding Entry.Command}"
+                                Command="{Binding $parent[UserControl].DataContext.CopyCommandCommand}" CommandParameter="{Binding}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14" />
+                                <TextBlock Text="{loc:Str insight.copyCommand}" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="icon" ToolTip.Tip="{loc:Str details.reveal}" IsVisible="{Binding CanReveal}"
+                                Command="{Binding $parent[UserControl].DataContext.RevealCommand}" CommandParameter="{Binding}">
+                            <mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16" />
+                        </Button>
+                        <Panel IsVisible="{Binding CanDelete}">
+                            <Button Classes="icon" ToolTip.Tip="{loc:Str details.delete}" IsVisible="{Binding !IsConfirming}"
+                                    Command="{Binding $parent[UserControl].DataContext.AskDeleteCommand}" CommandParameter="{Binding}">
+                                <mi:MaterialIcon Kind="TrashCanOutline" Width="17" Height="17" />
+                            </Button>
+                            <Button Classes="danger" Padding="12,6" FontSize="12.5" IsVisible="{Binding IsConfirming}"
+                                    Command="{Binding $parent[UserControl].DataContext.DeleteCommand}" CommandParameter="{Binding}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14" />
+                                    <TextBlock Text="{loc:Str details.confirm}" />
+                                </StackPanel>
+                            </Button>
+                        </Panel>
+                        <Button Classes="icon" IsVisible="{Binding HasChildren}"
+                                Command="{Binding $parent[UserControl].DataContext.ToggleExpandCommand}" CommandParameter="{Binding}">
+                            <Panel>
+                                <mi:MaterialIcon Kind="ChevronDown" Width="20" Height="20" IsVisible="{Binding !IsExpanded}" />
+                                <mi:MaterialIcon Kind="ChevronUp" Width="20" Height="20" IsVisible="{Binding IsExpanded}" />
+                            </Panel>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- its parts -->
+                    <ItemsControl Grid.Row="1" Grid.ColumnSpan="4" Margin="52,12,0,-8" Classes="rise"
+                                  ItemsSource="{Binding Children}" IsVisible="{Binding IsExpanded}"
+                                  ItemTemplate="{DynamicResource SpaceRow}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="32,6,32,28" MaxWidth="1320">
+
+            <!-- header -->
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{loc:Str disk.title}" Classes="h1" />
+                    <TextBlock Text="{Binding SubtitleText}" Classes="muted" Margin="0,4,0,0" />
+                </StackPanel>
+                <Button Grid.Column="1" Classes="primary" Command="{Binding AnalyzeCommand}" MinWidth="190" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <mi:MaterialIcon Kind="{Binding AnalyzeGlyph, Converter={x:Static c:IconConverter.Instance}}" Width="18" Height="18" />
+                        <TextBlock Text="{Binding AnalyzeText}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <!-- the whole disk, band by band -->
+            <Border Classes="card rise" Margin="0,20,0,0" Padding="28,26">
+                <StackPanel>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="{loc:Str disk.map}" Classes="h2" />
+                        <TextBlock Grid.Column="1" Text="{Binding FreeText}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding HasReport}" />
+                    </Grid>
+                    <c:SegmentBar ItemsSource="{Binding Segments}" Total="{Binding Total}" Track="{DynamicResource Brush.Track}" Height="26" Gap="3" Margin="0,18,0,18" />
+                    <ItemsControl ItemsSource="{Binding Segments}" IsVisible="{Binding HasReport}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,22,8" IsVisible="{Binding Bytes, Converter={x:Static c:PositiveConverter.Instance}}">
+                                    <Border Width="10" Height="10" CornerRadius="3" Background="{Binding Brush}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Name}" Classes="muted" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                    <c:CounterText Bytes="{Binding Bytes}" FontSize="13" FontWeight="SemiBold" Margin="7,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <c:RingArc Width="14" Height="14" StrokeThickness="2.5" Stroke="{DynamicResource Brush.Accent}" IsSpinning="True" IsVisible="{Binding IsAnalyzing}" />
+                        <TextBlock Text="{Binding StatusText}" Classes="caption" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <!-- everything Safe, in one go -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" IsVisible="{Binding CanRemoveSafe}">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <mi:MaterialIcon Kind="ShieldCheckOutline" Width="15" Height="15" Foreground="{DynamicResource Brush.Success}" />
+                            <TextBlock Text="{Binding SafeText}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Success}" />
+                        </StackPanel>
+                        <Button Classes="primary success" Padding="16,10" FontSize="13" Command="{Binding RemoveSafeCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <mi:MaterialIcon Kind="TrashCanOutline" Width="15" Height="15" />
+                                <TextBlock Text="{loc:Str disk.removeSafe}" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- what takes the space -->
+            <Border Classes="card rise" Margin="0,16,0,0" Padding="24,22" IsVisible="{Binding HasReport}">
+                <StackPanel>
+                    <TextBlock Text="{loc:Str disk.whatsTaking}" Classes="h2" />
+                    <TextBlock Text="{loc:Str disk.whatsTaking.desc}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,16" />
+                    <ItemsControl ItemsSource="{Binding Items}" ItemTemplate="{StaticResource SpaceRow}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

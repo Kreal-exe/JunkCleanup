@@ -1,0 +1,205 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:JunkCleanup.Controls"
+             xmlns:loc="clr-namespace:JunkCleanup.Localization"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="JunkCleanup.Views.DashboardView">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="26,6,26,28" MaxWidth="1320">
+
+            <!-- ───────── hero ───────── -->
+            <Border Classes="card" Padding="32,30" Margin="6,0" BoxShadow="0 10 30 0 #26000000">
+                <Grid ColumnDefinitions="Auto,36,*,32,Auto">
+
+                    <!-- ring -->
+                    <Panel Width="204" Height="204">
+                        <Ellipse Stroke="{DynamicResource Brush.Track}" StrokeThickness="14" Margin="0" />
+                        <c:RingArc StrokeThickness="14" Stroke="{DynamicResource Brush.RingGradient}"
+                                   Sweep="{Binding RingAngle}" IsSpinning="{Binding IsScanning}">
+                            <c:RingArc.Effect>
+                                <DropShadowEffect BlurRadius="26" OffsetX="0" OffsetY="0" Color="#7C6CFF" Opacity="0.55" />
+                            </c:RingArc.Effect>
+                        </c:RingArc>
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <c:CounterText Bytes="{Binding DisplayBytes}" Part="Number" Duration="900" FontSize="42" FontWeight="Bold" />
+                                <c:CounterText Bytes="{Binding DisplayBytes}" Part="Unit" Duration="900" FontSize="15" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Bottom" Margin="6,0,0,9" />
+                            </StackPanel>
+                            <Panel HorizontalAlignment="Center">
+                                <TextBlock Text="{loc:Str dash.reclaimable}" Classes="caption" HorizontalAlignment="Center" IsVisible="{Binding !IsScanning}" />
+                                <TextBlock Text="{loc:Str dash.foundSoFar}" Classes="caption" HorizontalAlignment="Center" IsVisible="{Binding IsScanning}" />
+                            </Panel>
+                        </StackPanel>
+                    </Panel>
+
+                    <!-- summary -->
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                        <TextBlock Text="{loc:Str dash.title}" Classes="h1" />
+                        <TextBlock Text="{Binding StatusText}" Classes="muted" Margin="0,6,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding CurrentTargetName}" Classes="caption" Margin="0,4,0,0" IsVisible="{Binding IsScanning}" />
+
+                        <c:SegmentBar ItemsSource="{Binding Categories}" Track="{DynamicResource Brush.Track}" Height="12" Margin="0,24,0,14" />
+
+                        <ItemsControl ItemsSource="{Binding Categories}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,20,6">
+                                        <Ellipse Width="8" Height="8" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Name}" Classes="muted" FontSize="12.5" Margin="7,0,0,0" VerticalAlignment="Center" />
+                                        <c:CounterText Bytes="{Binding Bytes}" FontSize="12.5" FontWeight="SemiBold" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- actions -->
+                    <StackPanel Grid.Column="4" VerticalAlignment="Center" Width="220">
+                        <Button Classes="primary" Command="{Binding ToggleScanCommand}" HorizontalAlignment="Stretch">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="{Binding ScanButtonGlyph, Converter={x:Static c:IconConverter.Instance}}" Width="18" Height="18" />
+                                <TextBlock Text="{Binding ScanButtonText}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="danger pulse" Command="{Binding CleanCommand}" IsEnabled="{Binding CanClean}"
+                                HorizontalAlignment="Stretch" Margin="0,14,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="TrashCanOutline" Width="18" Height="18" />
+                                <TextBlock Text="{Binding CleanButtonText}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,16,0,0" Spacing="7">
+                            <mi:MaterialIcon Kind="{Binding DeleteModeGlyph, Converter={x:Static c:IconConverter.Instance}}" Width="14" Height="14"
+                                             Foreground="{DynamicResource Brush.TextFaint}" />
+                            <TextBlock Text="{Binding DeleteModeText}" Classes="caption" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ───────── categories ───────── -->
+            <Grid Margin="10,30,10,12" ColumnDefinitions="*,Auto">
+                <TextBlock Text="{loc:Str dash.categories}" Classes="h2" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <TextBlock Text="{loc:Str dash.select}" Classes="caption" VerticalAlignment="Center" Margin="0,0,4,0" />
+                    <Button Classes="subtle" Content="{loc:Str dash.selectSafe}" Command="{Binding SelectSafeCommand}" />
+                    <Button Classes="subtle" Content="{loc:Str dash.selectAll}" Command="{Binding SelectAllCommand}" />
+                    <Button Classes="subtle" Content="{loc:Str dash.selectNone}" Command="{Binding SelectNoneCommand}" />
+                </StackPanel>
+            </Grid>
+
+            <ItemsControl ItemsSource="{Binding Categories}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="3" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Panel Classes="rise" Margin="6">
+                            <Button Classes="cardButton lift"
+                                    Command="{Binding $parent[UserControl].DataContext.OpenCategoryCommand}" CommandParameter="{Binding}">
+                                <Grid RowDefinitions="Auto,Auto,Auto">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                        <Border Classes="tile" Background="{Binding SoftBrush}">
+                                            <mi:MaterialIcon Kind="{Binding Glyph, Converter={x:Static c:IconConverter.Instance}}" Width="20" Height="20" Foreground="{Binding Brush}" />
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding TargetsText}" Classes="caption" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="2" Classes="toggle" IsChecked="{Binding IsEnabled}" />
+                                    </Grid>
+                                    <WrapPanel Grid.Row="1" Margin="0,18,0,0">
+                                        <c:CounterText Bytes="{Binding Bytes}" FontSize="26" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding FilesText}" Classes="muted" Margin="10,0,0,5" VerticalAlignment="Bottom" />
+                                        <TextBlock Text="{Binding SelectedText}" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}"
+                                                   Margin="10,0,0,5" VerticalAlignment="Bottom" IsVisible="{Binding IsPartlySelected}" />
+                                    </WrapPanel>
+                                    <c:SmoothBar Grid.Row="2" Value="{Binding Share}" Fill="{Binding Brush}" Track="{DynamicResource Brush.Track}" Height="6" Margin="0,14,0,0" />
+                                </Grid>
+                            </Button>
+                        </Panel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- ───────── largest targets ───────── -->
+            <Border Classes="card rise" Margin="6,22,6,0" Padding="24,22" IsVisible="{Binding HasResults}">
+                <StackPanel>
+                    <TextBlock Text="{loc:Str dash.largest}" Classes="h2" Margin="0,0,0,14" />
+                    <ItemsControl ItemsSource="{Binding TopTargets}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <!-- a row opens the target's details sheet -->
+                                <Button Classes="row" Margin="-10,0" ToolTip.Tip="{loc:Str details.open}"
+                                        Command="{Binding $parent[UserControl].DataContext.OpenDetailsCommand}" CommandParameter="{Binding}">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+                                        <Border Classes="tile" Width="34" Height="34" CornerRadius="10"
+                                                Background="{Binding Category, Converter={x:Static c:PaletteConverter.Instance}, ConverterParameter=Soft}">
+                                            <mi:MaterialIcon Kind="{Binding Glyph, Converter={x:Static c:IconConverter.Instance}}" Width="17" Height="17"
+                                                             Foreground="{Binding Category, Converter={x:Static c:PaletteConverter.Instance}}" />
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Margin="14,0,16,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Description}" Classes="caption" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                            <c:CounterText Bytes="{Binding Bytes}" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Right" />
+                                            <TextBlock Text="{Binding FilesText}" Classes="caption" HorizontalAlignment="Right" />
+                                        </StackPanel>
+                                        <c:SmoothBar Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Value="{Binding Share}"
+                                                     Fill="{Binding Category, Converter={x:Static c:PaletteConverter.Instance}}" Track="{DynamicResource Brush.Track}"
+                                                     Height="5" Margin="14,10,0,0" />
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{loc:Str dash.allClean}" Classes="muted" Margin="0,4,0,0" IsVisible="{Binding NothingFound}" />
+                </StackPanel>
+            </Border>
+
+            <!-- ───────── insights ───────── -->
+            <Border Classes="card rise" Margin="6,16,6,0" Padding="24,22" IsVisible="{Binding HasInsights}">
+                <StackPanel>
+                    <TextBlock Text="{loc:Str insight.title}" Classes="h2" />
+                    <TextBlock Text="{loc:Str insight.subtitle}" Classes="muted" FontSize="12.5" Margin="0,4,0,12" />
+                    <ItemsControl ItemsSource="{Binding Insights}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border CornerRadius="14" Background="{DynamicResource Brush.Inset}" Padding="16,14" Margin="0,0,0,8">
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                        <Border Classes="tile" Width="38" Height="38" CornerRadius="11" Background="{DynamicResource Brush.WarningSoft}" VerticalAlignment="Top">
+                                            <mi:MaterialIcon Kind="{Binding Glyph, Converter={x:Static c:IconConverter.Instance}}" Width="18" Height="18" Foreground="{DynamicResource Brush.Warning}" />
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Margin="14,0,16,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{Binding Bytes, Converter={x:Static c:BytesConverter.Instance}}" FontSize="16" FontWeight="SemiBold"
+                                                   VerticalAlignment="Center" Margin="0,0,16,0" />
+                                        <Button Grid.Column="3" Classes="ghost" Padding="12,8" VerticalAlignment="Center" IsVisible="{Binding HasAction}"
+                                                Command="{Binding $parent[UserControl].DataContext.RunInsightActionCommand}" CommandParameter="{Binding}">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <mi:MaterialIcon Kind="{Binding ActionGlyph, Converter={x:Static c:IconConverter.Instance}}" Width="14" Height="14" />
+                                                <TextBlock Text="{Binding ActionText}" FontSize="12.5" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

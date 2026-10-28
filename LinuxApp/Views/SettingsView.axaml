@@ -1,0 +1,110 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:JunkCleanup.Controls"
+             xmlns:loc="clr-namespace:JunkCleanup.Localization"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="JunkCleanup.Views.SettingsView">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="32,6,32,28" MaxWidth="960" HorizontalAlignment="Left">
+            <TextBlock Text="{loc:Str settings.title}" Classes="h1" />
+
+            <!-- general -->
+            <Border Classes="card rise" Margin="0,20,0,0" Padding="24,18,24,10">
+                <StackPanel>
+                    <TextBlock Text="{loc:Str settings.general}" Classes="h2" Margin="0,0,0,4" />
+                    <c:SettingRow Glyph="Earth" Title="{loc:Str settings.language}" Description="{loc:Str settings.language.desc}">
+                        <ComboBox Classes="combo" ItemsSource="{Binding Settings.Languages}" SelectedItem="{Binding Settings.SelectedLanguage}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </c:SettingRow>
+                    <c:SettingRow Glyph="ThemeLightDark" Title="{loc:Str settings.theme}" Description="{loc:Str settings.theme.desc}">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Classes="chip" Classes.active="{Binding Settings.Theme, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=dark}"
+                                    Content="{loc:Str settings.theme.dark}" Command="{Binding Settings.SetThemeCommand}" CommandParameter="dark" />
+                            <Button Classes="chip" Classes.active="{Binding Settings.Theme, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=light}"
+                                    Content="{loc:Str settings.theme.light}" Command="{Binding Settings.SetThemeCommand}" CommandParameter="light" />
+                            <Button Classes="chip" Classes.active="{Binding Settings.Theme, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=system}"
+                                    Content="{loc:Str settings.theme.system}" Command="{Binding Settings.SetThemeCommand}" CommandParameter="system" Margin="0" />
+                        </StackPanel>
+                    </c:SettingRow>
+                    <c:SettingRow Glyph="AnimationPlayOutline" Title="{loc:Str settings.animations}" Description="{loc:Str settings.animations.desc}">
+                        <CheckBox Classes="toggle" IsChecked="{Binding Settings.Animations}" />
+                    </c:SettingRow>
+                    <c:SettingRow Glyph="PlayCircleOutline" Title="{loc:Str settings.scanOnStartup}" Description="{loc:Str settings.scanOnStartup.desc}" BorderThickness="0">
+                        <CheckBox Classes="toggle" IsChecked="{Binding Settings.ScanOnStartup}" />
+                    </c:SettingRow>
+                </StackPanel>
+            </Border>
+
+            <!-- cleaning -->
+            <Border Classes="card rise" Margin="0,16,0,0" Padding="24,18,24,10">
+                <StackPanel>
+                    <TextBlock Text="{loc:Str settings.cleaning}" Classes="h2" Margin="0,0,0,4" />
+                    <c:SettingRow Glyph="TrashCanOutline" Title="{Binding Settings.DeleteModeLabel}" Description="{Binding Settings.DeleteModeDescription}">
+                        <CheckBox Classes="toggle" IsChecked="{Binding Settings.UseRecycleBin}" />
+                    </c:SettingRow>
+                    <c:SettingRow Glyph="ClockOutline" Title="{loc:Str settings.skipRecent}" Description="{loc:Str settings.skipRecent.desc}" BorderThickness="0">
+                        <WrapPanel>
+                            <Button Classes="chip" Classes.active="{Binding Settings.SkipRecentHours, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=0}"
+                                    Content="{loc:Str settings.skipRecent.off}" Command="{Binding Settings.SetSkipHoursCommand}" CommandParameter="0" />
+                            <Button Classes="chip" Classes.active="{Binding Settings.SkipRecentHours, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=6}"
+                                    Content="{Binding Settings.Hours6}" Command="{Binding Settings.SetSkipHoursCommand}" CommandParameter="6" />
+                            <Button Classes="chip" Classes.active="{Binding Settings.SkipRecentHours, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=24}"
+                                    Content="{Binding Settings.Hours24}" Command="{Binding Settings.SetSkipHoursCommand}" CommandParameter="24" />
+                            <Button Classes="chip" Classes.active="{Binding Settings.SkipRecentHours, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=72}"
+                                    Content="{Binding Settings.Days3}" Command="{Binding Settings.SetSkipHoursCommand}" CommandParameter="72" />
+                            <Button Classes="chip" Classes.active="{Binding Settings.SkipRecentHours, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=168}"
+                                    Content="{Binding Settings.Days7}" Command="{Binding Settings.SetSkipHoursCommand}" CommandParameter="168" Margin="0" />
+                        </WrapPanel>
+                    </c:SettingRow>
+                </StackPanel>
+            </Border>
+
+            <!-- custom folders -->
+            <Border Classes="card rise" Margin="0,16,0,0" Padding="24,18,24,20">
+                <StackPanel>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Text="{loc:Str settings.customFolders}" Classes="h2" />
+                            <TextBlock Text="{loc:Str settings.customFolders.desc}" Classes="muted" FontSize="12.5" Margin="0,4,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="ghost" Command="{Binding AddCustomFolderCommand}" VerticalAlignment="Top" Margin="16,0,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <mi:MaterialIcon Kind="FolderPlusOutline" Width="15" Height="15" />
+                                <TextBlock Text="{loc:Str settings.customFolders.add}" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Settings.CustomFolders}" Margin="0,14,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border CornerRadius="12" Background="{DynamicResource Brush.Inset}" Padding="14,8" Margin="0,0,0,8">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                        <mi:MaterialIcon Kind="FolderOutline" Width="17" Height="17" Foreground="{DynamicResource Brush.Cat.Custom}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding}" FontSize="13" Margin="12,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding}" />
+                                        <Button Grid.Column="2" Classes="icon" ToolTip.Tip="{loc:Str settings.customFolders.remove}"
+                                                Command="{Binding $parent[UserControl].DataContext.Settings.RemoveCustomFolderCommand}" CommandParameter="{Binding}">
+                                            <mi:MaterialIcon Kind="TrashCanOutline" Width="16" Height="16" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{loc:Str settings.customFolders.empty}" Classes="caption" Margin="0,14,0,0" IsVisible="{Binding !Settings.HasCustomFolders}" />
+                </StackPanel>
+            </Border>
+
+            <!-- reset -->
+            <Border Classes="card rise" Margin="0,16,0,0" Padding="24,4">
+                <c:SettingRow Glyph="Restore" Title="{loc:Str settings.reset}" Description="{loc:Str settings.reset.desc}" BorderThickness="0">
+                    <Button Classes="ghost" Content="{loc:Str settings.reset.button}" Command="{Binding Settings.ResetCommand}" />
+                </c:SettingRow>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

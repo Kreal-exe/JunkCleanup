@@ -1,0 +1,92 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:JunkCleanup.Controls"
+             xmlns:loc="clr-namespace:JunkCleanup.Localization"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="JunkCleanup.Views.DetailsSheet">
+    <!-- A target's entries, largest first, each removable or revealable on its own. -->
+    <Grid x:Name="Backdrop" Background="{DynamicResource Brush.Overlay}">
+        <Border x:Name="Card" Classes="sheet" Width="700" Margin="0,48" Padding="30,28,30,26" CornerRadius="24"
+                Background="{DynamicResource Brush.CardSolid}" BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1"
+                HorizontalAlignment="Center" VerticalAlignment="Center" BoxShadow="0 18 56 0 #80000000">
+            <Grid RowDefinitions="Auto,Auto,*">
+                <!-- header -->
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                    <Border Classes="tile" Width="48" Height="48" CornerRadius="15"
+                            Background="{Binding DetailsTarget.Category, Converter={x:Static c:PaletteConverter.Instance}, ConverterParameter=Soft}">
+                        <mi:MaterialIcon Kind="{Binding DetailsTarget.Glyph, Converter={x:Static c:IconConverter.Instance}}" Width="22" Height="22"
+                                         Foreground="{Binding DetailsTarget.Category, Converter={x:Static c:PaletteConverter.Instance}}" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding DetailsTarget.Name}" Classes="h2" FontSize="22" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding DetailsSubtitle}" Classes="muted" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <Border Grid.Column="2" Classes="pill" ToolTip.Tip="{Binding DetailsTarget.RiskHint}"
+                            Background="{Binding DetailsTarget.Risk, Converter={x:Static c:PaletteConverter.Instance}, ConverterParameter=Soft}">
+                        <TextBlock Text="{Binding DetailsTarget.RiskText}" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{Binding DetailsTarget.Risk, Converter={x:Static c:PaletteConverter.Instance}}" />
+                    </Border>
+                    <Button Grid.Column="3" Classes="icon" Margin="10,0,0,0" Command="{Binding CloseDetailsCommand}" ToolTip.Tip="{loc:Str clean.close}">
+                        <mi:MaterialIcon Kind="Close" Width="18" Height="18" />
+                    </Button>
+                </Grid>
+
+                <!-- hint + reveal -->
+                <Grid Grid.Row="1" Margin="0,18,0,16" ColumnDefinitions="*,Auto">
+                    <TextBlock Text="{loc:Str details.hint}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="ghost" Padding="12,7" Margin="16,0,0,0" FontSize="12.5" Command="{Binding RevealDetailsRootCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14" />
+                            <TextBlock Text="{loc:Str details.reveal}" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+
+                <!-- entries -->
+                <Panel Grid.Row="2">
+                    <ScrollViewer MaxHeight="460" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding DetailsTarget.TopEntries}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Classes="entry" CornerRadius="12" Padding="12,10,10,10" Margin="0,0,0,8">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                                            <Border Width="36" Height="36" CornerRadius="10" Background="{Binding KindSoftBrush}" VerticalAlignment="Center">
+                                                <mi:MaterialIcon Kind="{Binding Glyph, Converter={x:Static c:IconConverter.Instance}}" Width="17" Height="17"
+                                                                 Foreground="{Binding KindBrush}" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="14,0,14,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" FontSize="13.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Path}" />
+                                                <TextBlock Text="{Binding FilesText}" Classes="caption" Margin="0,2,0,0" />
+                                                <c:SmoothBar Value="{Binding Share}" Fill="{Binding KindBrush}" Track="{DynamicResource Brush.Track}" Height="4" Margin="0,7,0,0" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" Text="{Binding Bytes, Converter={x:Static c:BytesConverter.Instance}}" FontSize="14" FontWeight="SemiBold"
+                                                       MinWidth="76" TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,14,0" />
+                                            <Button Grid.Column="3" Classes="icon" ToolTip.Tip="{loc:Str details.reveal}"
+                                                    Command="{Binding $parent[UserControl].DataContext.RevealEntryCommand}" CommandParameter="{Binding}">
+                                                <mi:MaterialIcon Kind="OpenInNew" Width="16" Height="16" />
+                                            </Button>
+                                            <Panel Grid.Column="4" Margin="2,0,0,0" VerticalAlignment="Center">
+                                                <Button Classes="icon" ToolTip.Tip="{loc:Str details.delete}" IsVisible="{Binding !IsConfirming}"
+                                                        Command="{Binding $parent[UserControl].DataContext.AskDeleteEntryCommand}" CommandParameter="{Binding}">
+                                                    <mi:MaterialIcon Kind="TrashCanOutline" Width="17" Height="17" />
+                                                </Button>
+                                                <Button Classes="danger" Padding="12,6" FontSize="12.5" IsVisible="{Binding IsConfirming}"
+                                                        Command="{Binding $parent[UserControl].DataContext.DeleteEntryCommand}" CommandParameter="{Binding}">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                                        <mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14" />
+                                                        <TextBlock Text="{loc:Str details.confirm}" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </Panel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock Text="{loc:Str details.empty}" Classes="muted" IsVisible="{Binding !DetailsTarget.HasEntries}" />
+                </Panel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,0 +1,130 @@
+<UserControl x:Class="JunkCleanup.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:JunkCleanup.Controls"
+             xmlns:loc="clr-namespace:JunkCleanup.Localization"
+             xmlns:vm="clr-namespace:JunkCleanup.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DataContext="{d:DesignInstance Type=vm:MainViewModel}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="32,6,32,28" MaxWidth="960" HorizontalAlignment="Left">
+            <TextBlock Text="{loc:Str settings.title}" Style="{StaticResource H1}" c:Entrance.Delay="0" />
+
+            <!-- general -->
+            <Border Style="{StaticResource Card}" Margin="0,20,0,0" Padding="24,18,24,10" c:Entrance.Delay="60">
+                <StackPanel>
+                    <TextBlock Text="{loc:Str settings.general}" Style="{StaticResource H2}" Margin="0,0,0,4" />
+
+                    <c:SettingRow Glyph="&#xE774;" Title="{loc:Str settings.language}" Description="{loc:Str settings.language.desc}">
+                        <ComboBox Style="{StaticResource Combo}" ItemsSource="{Binding Settings.Languages}" SelectedItem="{Binding Settings.SelectedLanguage}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:LanguageOption}">
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </c:SettingRow>
+
+                    <c:SettingRow Glyph="&#xE790;" Title="{loc:Str settings.theme}" Description="{loc:Str settings.theme.desc}">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton Style="{StaticResource Chip}" Content="{loc:Str settings.theme.dark}" Command="{Binding Settings.SetThemeCommand}" CommandParameter="dark"
+                                         IsChecked="{Binding Settings.Theme, Converter={StaticResource Equals}, ConverterParameter=dark, Mode=OneWay}" />
+                            <RadioButton Style="{StaticResource Chip}" Content="{loc:Str settings.theme.light}" Command="{Binding Settings.SetThemeCommand}" CommandParameter="light"
+                                         IsChecked="{Binding Settings.Theme, Converter={StaticResource Equals}, ConverterParameter=light, Mode=OneWay}" />
+                            <RadioButton Style="{StaticResource Chip}" Content="{loc:Str settings.theme.system}" Command="{Binding Settings.SetThemeCommand}" CommandParameter="system" Margin="0"
+                                         IsChecked="{Binding Settings.Theme, Converter={StaticResource Equals}, ConverterParameter=system, Mode=OneWay}" />
+                        </StackPanel>
+                    </c:SettingRow>
+
+                    <c:SettingRow Glyph="&#xE945;" Title="{loc:Str settings.animations}" Description="{loc:Str settings.animations.desc}">
+                        <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding Settings.Animations}" />
+                    </c:SettingRow>
+
+                    <c:SettingRow Glyph="&#xE91B;" Title="{loc:Str settings.backdrop}" Description="{loc:Str settings.backdrop.desc}">
+                        <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding Settings.Backdrop}" IsEnabled="{Binding Settings.BackdropSupported}" />
+                    </c:SettingRow>
+
+                    <c:SettingRow Glyph="&#xE768;" Title="{loc:Str settings.scanOnStartup}" Description="{loc:Str settings.scanOnStartup.desc}">
+                        <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding Settings.ScanOnStartup}" />
+                    </c:SettingRow>
+                </StackPanel>
+            </Border>
+
+            <!-- cleaning -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0" Padding="24,18,24,10" c:Entrance.Delay="120">
+                <StackPanel>
+                    <TextBlock Text="{loc:Str settings.cleaning}" Style="{StaticResource H2}" Margin="0,0,0,4" />
+
+                    <c:SettingRow Glyph="&#xE74D;" Title="{Binding Settings.DeleteModeLabel}" Description="{Binding Settings.DeleteModeDescription}">
+                        <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding Settings.UseRecycleBin}" />
+                    </c:SettingRow>
+
+                    <c:SettingRow Glyph="&#xE823;" Title="{loc:Str settings.skipRecent}" Description="{loc:Str settings.skipRecent.desc}">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton Style="{StaticResource Chip}" Content="{loc:Str settings.skipRecent.off}" Command="{Binding Settings.SetSkipHoursCommand}" CommandParameter="0"
+                                         IsChecked="{Binding Settings.SkipRecentHours, Converter={StaticResource Equals}, ConverterParameter=0, Mode=OneWay}" />
+                            <RadioButton Style="{StaticResource Chip}" Content="{Binding Settings.Hours6}" Command="{Binding Settings.SetSkipHoursCommand}" CommandParameter="6"
+                                         IsChecked="{Binding Settings.SkipRecentHours, Converter={StaticResource Equals}, ConverterParameter=6, Mode=OneWay}" />
+                            <RadioButton Style="{StaticResource Chip}" Content="{Binding Settings.Hours24}" Command="{Binding Settings.SetSkipHoursCommand}" CommandParameter="24"
+                                         IsChecked="{Binding Settings.SkipRecentHours, Converter={StaticResource Equals}, ConverterParameter=24, Mode=OneWay}" />
+                            <RadioButton Style="{StaticResource Chip}" Content="{Binding Settings.Days3}" Command="{Binding Settings.SetSkipHoursCommand}" CommandParameter="72"
+                                         IsChecked="{Binding Settings.SkipRecentHours, Converter={StaticResource Equals}, ConverterParameter=72, Mode=OneWay}" />
+                            <RadioButton Style="{StaticResource Chip}" Content="{Binding Settings.Days7}" Command="{Binding Settings.SetSkipHoursCommand}" CommandParameter="168" Margin="0"
+                                         IsChecked="{Binding Settings.SkipRecentHours, Converter={StaticResource Equals}, ConverterParameter=168, Mode=OneWay}" />
+                        </StackPanel>
+                    </c:SettingRow>
+                </StackPanel>
+            </Border>
+
+            <!-- custom folders -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0" Padding="24,18,24,20" c:Entrance.Delay="180">
+                <StackPanel>
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="{loc:Str settings.customFolders}" Style="{StaticResource H2}" />
+                            <TextBlock Text="{loc:Str settings.customFolders.desc}" Style="{StaticResource Muted}" FontSize="12.5" Margin="0,4,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button Style="{StaticResource GhostButton}" Command="{Binding AddCustomFolderCommand}" HorizontalAlignment="Right" VerticalAlignment="Top">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE710;" Style="{StaticResource Glyph}" FontSize="12" />
+                                <TextBlock Text="{loc:Str settings.customFolders.add}" Margin="8,0,0,0" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <ItemsControl ItemsSource="{Binding Settings.CustomFolders}" Margin="0,14,0,0" c:Entrance.Stagger="40">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border CornerRadius="12" Background="{DynamicResource Brush.Inset}" Padding="14,10" Margin="0,0,0,8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="&#xE8B7;" Style="{StaticResource Glyph}" Foreground="{DynamicResource Brush.Cat.Custom}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding}" FontSize="13" Margin="12,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding}" />
+                                        <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="&#xE74D;" ToolTip="{loc:Str settings.customFolders.remove}"
+                                                Command="{Binding DataContext.Settings.RemoveCustomFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{loc:Str settings.customFolders.empty}" Style="{StaticResource Caption}" Margin="0,14,0,0"
+                               Visibility="{Binding Settings.HasCustomFolders, Converter={StaticResource BoolToVisInverse}}" />
+                </StackPanel>
+            </Border>
+
+            <!-- reset -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0" Padding="24,10" c:Entrance.Delay="240">
+                <c:SettingRow Glyph="&#xE777;" Title="{loc:Str settings.reset}" Description="{loc:Str settings.reset.desc}" BorderThickness="0">
+                    <Button Style="{StaticResource GhostButton}" Content="{loc:Str settings.reset.button}" Command="{Binding Settings.ResetCommand}" />
+                </c:SettingRow>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
