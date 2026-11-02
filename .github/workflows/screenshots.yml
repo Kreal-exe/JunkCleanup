@@ -39,11 +39,15 @@ jobs:
           Shot dashboard Dashboard dark
           Shot dashboard-more Dashboard dark -Wheel -8
           Shot targets Targets dark
-          Shot disk Disk dark -Wait 150
-          Shot disk-more Disk dark -Wheel -6 -Wait 150
           Shot settings Settings dark
           Shot light Dashboard light
-          Shot light-disk Disk light -Wait 150
+          # The runner's disk holds ~120 GB of toolchains, so the disk map takes minutes: one long run, two shots.
+          @{ theme = "dark"; language = "en"; windowWidth = 1240; windowHeight = 800 } | ConvertTo-Json | Set-Content $env:JUNKCLEANUP_SETTINGS
+          $p = Start-Process publish/sc/JunkCleanup.exe -ArgumentList "--page", "Disk" -PassThru
+          Start-Sleep -Seconds 720
+          ./tools/capture.ps1 -ProcessId $p.Id -Out "shots/disk.png"
+          ./tools/capture.ps1 -ProcessId $p.Id -Out "shots/disk-more.png" -Wheel -6
+          Stop-Process -Id $p.Id -Force
 
       - uses: actions/upload-artifact@v4
         with:
