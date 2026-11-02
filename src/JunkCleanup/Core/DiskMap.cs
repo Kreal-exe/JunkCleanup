@@ -331,35 +331,46 @@ public sealed class DiskMapEngine
         }
 
         long bytes = 0;
-        var unreadable = false;
-        var stack = new Stack<string>();
-        stack.Push(path);
-        var options = new EnumerationOptions { IgnoreInaccessible = false, AttributesToSkip = FileAttributes.ReparsePoint, ReturnSpecialDirectories = false };
-        while (stack.Count > 0)
+        var unreadable = 0;
+        MeasureFolder(path, 0);
+        ct.ThrowIfCancellationRequested();
+        return (bytes, unreadable != 0);
+
+        // The top levels fan out over the thread pool: C:\Windows or Program Files walked by one thread take minutes.
+        void MeasureFolder(string dir, int depth)
         {
-            ct.ThrowIfCancellationRequested();
-            var dir = stack.Pop();
+            if (ct.IsCancellationRequested) return;
+            var folders = new List<string>();
+            long local = 0;
             try
             {
-                foreach (var info in new DirectoryInfo(dir).EnumerateFileSystemInfos("*", options))
+                var entries = new System.IO.Enumeration.FileSystemEnumerable<(string? Folder, long Length)>(dir,
+                    (ref System.IO.Enumeration.FileSystemEntry e) => e.IsDirectory ? (e.ToFullPath(), 0) : (null, e.Length), MeasureOptions);
+                foreach (var (folder, length) in entries)
                 {
-                    if (info is DirectoryInfo d)
-                    {
-                        if (!exclude.Contains(d.FullName)) stack.Push(d.FullName);
-                    }
-                    else
-                    {
-                        try { bytes += ((FileInfo)info).Length; } catch { /* vanished */ }
-                    }
+                    if (folder is null) local += length;
+                    else if (!exclude.Contains(folder)) folders.Add(folder);
                 }
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException)
             {
-                unreadable = true;
+                Interlocked.Exchange(ref unreadable, 1);
             }
+            Interlocked.Add(ref bytes, local);
+
+            if (depth < ParallelDepth && folders.Count > 1)
+                Parallel.ForEach(folders, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, f => MeasureFolder(f, depth + 1));
+            else
+                foreach (var f in folders) MeasureFolder(f, depth + 1);
         }
-        return (bytes, unreadable);
     }
+
+    private const int ParallelDepth = 3;
+
+    private static readonly EnumerationOptions MeasureOptions = new()
+    {
+        IgnoreInaccessible = false, AttributesToSkip = FileAttributes.ReparsePoint, ReturnSpecialDirectories = false,
+    };
 
     private static (string Name, long Total, long Free) Volume(string path)
     {
