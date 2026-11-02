@@ -61,6 +61,12 @@
                         <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding Settings.UseRecycleBin}" />
                     </c:SettingRow>
 
+                    <c:SettingRow Glyph="&#xE7BA;" Title="{loc:Str settings.confirmClean}" Description="{loc:Str settings.confirmClean.desc}">
+                        <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding Settings.ConfirmClean}" />
+                    </c:SettingRow>
+                    <c:SettingRow Glyph="&#xEDA2;" Title="{loc:Str settings.diskWithScan}" Description="{loc:Str settings.diskWithScan.desc}">
+                        <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding Settings.MeasureDiskWithScan}" />
+                    </c:SettingRow>
                     <c:SettingRow Glyph="&#xE823;" Title="{loc:Str settings.skipRecent}" Description="{loc:Str settings.skipRecent.desc}">
                         <StackPanel Orientation="Horizontal">
                             <RadioButton Style="{StaticResource Chip}" Content="{loc:Str settings.skipRecent.off}" Command="{Binding Settings.SetSkipHoursCommand}" CommandParameter="0"

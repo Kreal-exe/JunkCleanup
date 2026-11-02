@@ -278,6 +278,13 @@ public static class TargetCatalog
         },
         new()
         {
+            // Images Lima and Colima download to create a VM; a new machine downloads them again.
+            Id = "dev.vmimages", Category = TargetCategory.Developer, Glyph = "Harddisk",
+            Risk = RiskLevel.Moderate,
+            RootPatterns = [$"{Cache}/lima/download", $"{Cache}/colima"],
+        },
+        new()
+        {
             Id = "dev.playwright", Category = TargetCategory.Developer, Glyph = GTheater,
             Risk = RiskLevel.Careful, EnabledByDefault = false,
             RootPatterns = [$"{Cache}/ms-playwright"],

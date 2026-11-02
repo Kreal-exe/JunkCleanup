@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "Safer. Files can be restored, but space is freed only after the bin is emptied.",
   "settings.deleteMode.permanent": "Delete permanently",
   "settings.deleteMode.permanent.desc": "Faster and frees space immediately. Cannot be undone.",
-  "settings.skipRecent": "Skip recent temp files",
-  "settings.skipRecent.desc": "Temporary files newer than this may still be in use.",
+  "settings.skipRecent": "Skip recently changed files",
+  "settings.skipRecent.desc": "Temporary files and app caches changed more recently than this are left alone: an app may still be using them. Off cleans everything found.",
   "settings.skipRecent.off": "Off",
   "settings.hours": "{0} h",
   "settings.days": "{0} d",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "Data shared by programs and Windows: installers' caches, licences, settings.",
   "space.windows.name": "Windows",
   "space.windows.desc": "The operating system. The command (as administrator) removes superseded update components.",
-  "dash.selectedBytes": "{0} selected"
+  "dash.selectedBytes": "{0} selected",
+  "settings.diskWithScan": "Measure the disk with every scan",
+  "settings.diskWithScan.desc": "Scanning also refreshes the Disk page. Turn off to scan only the caches; the Disk page then measures when you open it.",
+  "settings.confirmClean": "Ask before cleaning",
+  "settings.confirmClean.desc": "Show how much and how many files will go before anything is removed.",
+  "target.dev.vmimages.name": "VM image downloads",
+  "target.dev.vmimages.desc": "Disk images Lima and Colima downloaded to create virtual machines. Downloaded again when a new machine needs one."
 }

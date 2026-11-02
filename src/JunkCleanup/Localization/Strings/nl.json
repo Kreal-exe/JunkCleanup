@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "Veiliger. Bestanden kunnen worden teruggezet, maar de ruimte komt pas vrij als de Prullenbak is geleegd.",
   "settings.deleteMode.permanent": "Definitief verwijderen",
   "settings.deleteMode.permanent.desc": "Sneller en maakt meteen ruimte vrij. Kan niet ongedaan worden gemaakt.",
-  "settings.skipRecent": "Recente tijdelijke bestanden overslaan",
-  "settings.skipRecent.desc": "Tijdelijke bestanden die nieuwer zijn dan dit kunnen nog in gebruik zijn.",
+  "settings.skipRecent": "Recent gewijzigde bestanden overslaan",
+  "settings.skipRecent.desc": "Tijdelijke bestanden en app-caches die recenter zijn gewijzigd blijven staan: een app gebruikt ze misschien nog. ‘Uit’ ruimt alles op wat gevonden is.",
   "settings.skipRecent.off": "Uit",
   "settings.hours": "{0} u",
   "settings.days": "{0} d",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "Gedeelde gegevens van programma’s en Windows: installatiecaches, licenties, instellingen.",
   "space.windows.name": "Windows",
   "space.windows.desc": "Het besturingssysteem. De opdracht (als beheerder) verwijdert vervangen updateonderdelen.",
-  "dash.selectedBytes": "{0} geselecteerd"
+  "dash.selectedBytes": "{0} geselecteerd",
+  "settings.diskWithScan": "Schijf meten bij elke scan",
+  "settings.diskWithScan.desc": "De scan ververst ook de pagina Schijf. Zet uit om alleen caches te scannen; Schijf meet dan bij openen.",
+  "settings.confirmClean": "Vragen voor het opruimen",
+  "settings.confirmClean.desc": "Laten zien hoeveel en hoeveel bestanden verdwijnen voordat er iets wordt verwijderd.",
+  "target.dev.vmimages.name": "Gedownloade VM-images",
+  "target.dev.vmimages.desc": "Schijfimages die Lima en Colima downloadden voor virtuele machines. Opnieuw gedownload als een nieuwe machine ze nodig heeft."
 }

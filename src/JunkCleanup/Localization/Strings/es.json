@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "Más seguro. Los archivos se pueden restaurar, pero el espacio solo se libera al vaciar la papelera.",
   "settings.deleteMode.permanent": "Eliminar permanentemente",
   "settings.deleteMode.permanent.desc": "Más rápido y libera espacio al instante. No se puede deshacer.",
-  "settings.skipRecent": "Omitir archivos temporales recientes",
-  "settings.skipRecent.desc": "Los archivos temporales más recientes que este límite podrían estar todavía en uso.",
+  "settings.skipRecent": "Omitir archivos cambiados recientemente",
+  "settings.skipRecent.desc": "Los archivos temporales y cachés de apps cambiados más recientemente no se tocan: una app aún puede usarlos. «Desactivado» limpia todo lo encontrado.",
   "settings.skipRecent.off": "Desactivado",
   "settings.hours": "{0} h",
   "settings.days": "{0} d",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "Datos compartidos por programas y Windows: cachés de instaladores, licencias, ajustes.",
   "space.windows.name": "Windows",
   "space.windows.desc": "El sistema operativo. El comando (como administrador) quita componentes de actualización reemplazados.",
-  "dash.selectedBytes": "{0} seleccionados"
+  "dash.selectedBytes": "{0} seleccionados",
+  "settings.diskWithScan": "Medir el disco en cada análisis",
+  "settings.diskWithScan.desc": "El análisis también actualiza la página Disco. Desactívalo para analizar solo cachés; Disco mide al abrirla.",
+  "settings.confirmClean": "Preguntar antes de limpiar",
+  "settings.confirmClean.desc": "Mostrar cuánto y cuántos archivos se irán antes de borrar nada.",
+  "target.dev.vmimages.name": "Imágenes de VM descargadas",
+  "target.dev.vmimages.desc": "Imágenes de disco que Lima y Colima descargaron para crear máquinas virtuales. Se descargan de nuevo cuando una máquina nueva las necesita."
 }

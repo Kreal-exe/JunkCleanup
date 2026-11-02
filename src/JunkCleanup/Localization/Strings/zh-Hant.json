@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "較安全。檔案可以還原，但要清空資源回收筒後才會釋放空間。",
   "settings.deleteMode.permanent": "永久刪除",
   "settings.deleteMode.permanent.desc": "更快，並立即釋放空間。無法復原。",
-  "settings.skipRecent": "略過最近的暫存檔",
-  "settings.skipRecent.desc": "比這更新的暫存檔可能仍在使用中。",
+  "settings.skipRecent": "略過最近變更的檔案",
+  "settings.skipRecent.desc": "比此時間更新的暫存檔和 App 快取會被保留：App 可能仍在使用。「關閉」會清理找到的全部內容。",
   "settings.skipRecent.off": "關閉",
   "settings.hours": "{0} 小時",
   "settings.days": "{0} 天",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "程式和 Windows 共用的資料：安裝程式快取、授權、設定。",
   "space.windows.name": "Windows",
   "space.windows.desc": "作業系統。指令（以系統管理員身分）會移除已被取代的更新元件。",
-  "dash.selectedBytes": "已選 {0}"
+  "dash.selectedBytes": "已選 {0}",
+  "settings.diskWithScan": "每次掃描時測量磁碟",
+  "settings.diskWithScan.desc": "掃描同時重新整理「磁碟」頁面。關閉後只掃描快取；「磁碟」頁面在開啟時測量。",
+  "settings.confirmClean": "清理前詢問",
+  "settings.confirmClean.desc": "刪除任何內容前，顯示將刪除多少空間和多少個檔案。",
+  "target.dev.vmimages.name": "已下載的虛擬機器映像",
+  "target.dev.vmimages.desc": "Lima 和 Colima 為建立虛擬機器下載的磁碟映像。新機器需要時會重新下載。"
 }

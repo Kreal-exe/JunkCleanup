@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "ปลอดภัยกว่า กู้คืนไฟล์ได้ แต่พื้นที่จะว่างหลังล้างถังแล้วเท่านั้น",
   "settings.deleteMode.permanent": "ลบถาวร",
   "settings.deleteMode.permanent.desc": "เร็วกว่าและคืนพื้นที่ทันที ไม่สามารถเลิกทำได้",
-  "settings.skipRecent": "ข้ามไฟล์ชั่วคราวล่าสุด",
-  "settings.skipRecent.desc": "ไฟล์ชั่วคราวที่ใหม่กว่านี้อาจยังถูกใช้งานอยู่",
+  "settings.skipRecent": "ข้ามไฟล์ที่เพิ่งเปลี่ยน",
+  "settings.skipRecent.desc": "ไฟล์ชั่วคราวและแคชแอปที่เปลี่ยนล่าสุดกว่านี้จะไม่ถูกแตะ เพราะแอปอาจยังใช้อยู่ “ปิด” จะล้างทุกอย่างที่พบ",
   "settings.skipRecent.off": "ปิด",
   "settings.hours": "{0} ชม.",
   "settings.days": "{0} วัน",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "ข้อมูลที่โปรแกรมและ Windows ใช้ร่วมกัน: แคชตัวติดตั้ง ใบอนุญาต การตั้งค่า",
   "space.windows.name": "Windows",
   "space.windows.desc": "ระบบปฏิบัติการ คำสั่ง (ในฐานะผู้ดูแลระบบ) จะลบส่วนประกอบอัปเดตที่ถูกแทนที่แล้ว",
-  "dash.selectedBytes": "เลือกแล้ว {0}"
+  "dash.selectedBytes": "เลือกแล้ว {0}",
+  "settings.diskWithScan": "วัดดิสก์ทุกครั้งที่สแกน",
+  "settings.diskWithScan.desc": "การสแกนจะรีเฟรชหน้าดิสก์ด้วย ปิดเพื่อสแกนเฉพาะแคช แล้วหน้าดิสก์จะวัดเมื่อเปิด",
+  "settings.confirmClean": "ถามก่อนล้าง",
+  "settings.confirmClean.desc": "แสดงขนาดและจำนวนไฟล์ที่จะถูกลบก่อนลบสิ่งใด",
+  "target.dev.vmimages.name": "อิมเมจ VM ที่ดาวน์โหลด",
+  "target.dev.vmimages.desc": "อิมเมจดิสก์ที่ Lima และ Colima ดาวน์โหลดเพื่อสร้างเครื่องเสมือน จะดาวน์โหลดใหม่เมื่อเครื่องใหม่ต้องใช้"
 }

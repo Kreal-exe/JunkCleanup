@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "Daha güvenli. Dosyalar geri yüklenebilir, ancak alan yalnızca kutu boşaltılınca açılır.",
   "settings.deleteMode.permanent": "Kalıcı olarak sil",
   "settings.deleteMode.permanent.desc": "Daha hızlıdır ve alanı hemen açar. Geri alınamaz.",
-  "settings.skipRecent": "Yeni geçici dosyaları atla",
-  "settings.skipRecent.desc": "Bundan daha yeni geçici dosyalar hâlâ kullanımda olabilir.",
+  "settings.skipRecent": "Yakın zamanda değişen dosyaları atla",
+  "settings.skipRecent.desc": "Bundan daha yeni değişen geçici dosyalar ve uygulama önbellekleri dokunulmadan kalır: bir uygulama hâlâ kullanıyor olabilir. “Kapalı” bulunan her şeyi temizler.",
   "settings.skipRecent.off": "Kapalı",
   "settings.hours": "{0} sa",
   "settings.days": "{0} g",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "Programların ve Windows'un paylaştığı veriler: yükleyici önbellekleri, lisanslar, ayarlar.",
   "space.windows.name": "Windows",
   "space.windows.desc": "İşletim sistemi. Komut (yönetici olarak) yerine yenisi gelen güncelleme bileşenlerini kaldırır.",
-  "dash.selectedBytes": "{0} seçili"
+  "dash.selectedBytes": "{0} seçili",
+  "settings.diskWithScan": "Her taramada diski ölç",
+  "settings.diskWithScan.desc": "Tarama Disk sayfasını da yeniler. Yalnızca önbellekleri taramak için kapatın; Disk sayfası açıldığında ölçer.",
+  "settings.confirmClean": "Temizlemeden önce sor",
+  "settings.confirmClean.desc": "Bir şey silinmeden önce ne kadar ve kaç dosyanın gideceğini göster.",
+  "target.dev.vmimages.name": "İndirilen sanal makine görüntüleri",
+  "target.dev.vmimages.desc": "Lima ve Colima'nın sanal makine oluşturmak için indirdiği disk görüntüleri. Yeni bir makine gerektiğinde yeniden indirilir."
 }

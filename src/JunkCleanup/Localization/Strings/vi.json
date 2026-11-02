@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "An toàn hơn. Có thể khôi phục tệp, nhưng dung lượng chỉ được giải phóng khi dọn sạch Thùng rác.",
   "settings.deleteMode.permanent": "Xóa vĩnh viễn",
   "settings.deleteMode.permanent.desc": "Nhanh hơn và giải phóng dung lượng ngay. Không thể hoàn tác.",
-  "settings.skipRecent": "Bỏ qua tệp tạm gần đây",
-  "settings.skipRecent.desc": "Tệp tạm mới hơn khoảng này có thể vẫn đang được dùng.",
+  "settings.skipRecent": "Bỏ qua tệp vừa thay đổi",
+  "settings.skipRecent.desc": "Tệp tạm và bộ nhớ đệm ứng dụng thay đổi gần hơn mức này được giữ lại: ứng dụng có thể vẫn đang dùng. “Tắt” dọn mọi thứ tìm thấy.",
   "settings.skipRecent.off": "Tắt",
   "settings.hours": "{0} giờ",
   "settings.days": "{0} ngày",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "Dữ liệu dùng chung của chương trình và Windows: bộ nhớ đệm trình cài đặt, giấy phép, cài đặt.",
   "space.windows.name": "Windows",
   "space.windows.desc": "Hệ điều hành. Lệnh (chạy với quyền quản trị) gỡ các thành phần cập nhật đã bị thay thế.",
-  "dash.selectedBytes": "đã chọn {0}"
+  "dash.selectedBytes": "đã chọn {0}",
+  "settings.diskWithScan": "Đo ổ đĩa mỗi lần quét",
+  "settings.diskWithScan.desc": "Lần quét cũng làm mới trang Ổ đĩa. Tắt để chỉ quét bộ nhớ đệm; khi đó Ổ đĩa đo khi bạn mở.",
+  "settings.confirmClean": "Hỏi trước khi dọn",
+  "settings.confirmClean.desc": "Cho biết dung lượng và số tệp sẽ bị xoá trước khi xoá bất cứ thứ gì.",
+  "target.dev.vmimages.name": "Ảnh máy ảo đã tải",
+  "target.dev.vmimages.desc": "Ảnh đĩa Lima và Colima tải về để tạo máy ảo. Sẽ tải lại khi máy mới cần."
 }

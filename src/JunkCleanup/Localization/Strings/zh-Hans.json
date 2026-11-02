@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "更安全。文件可以还原，但只有清空回收站后才会释放空间。",
   "settings.deleteMode.permanent": "永久删除",
   "settings.deleteMode.permanent.desc": "更快，并立即释放空间。无法撤销。",
-  "settings.skipRecent": "跳过最近的临时文件",
-  "settings.skipRecent.desc": "比此时间更新的临时文件可能仍在使用中。",
+  "settings.skipRecent": "跳过最近更改的文件",
+  "settings.skipRecent.desc": "比此时间更新的临时文件和应用缓存会被保留：应用可能仍在使用。“关闭”会清理找到的全部内容。",
   "settings.skipRecent.off": "关",
   "settings.hours": "{0} 小时",
   "settings.days": "{0} 天",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "程序和 Windows 共享的数据：安装程序缓存、许可证、设置。",
   "space.windows.name": "Windows",
   "space.windows.desc": "操作系统。命令（以管理员身份）会删除已被取代的更新组件。",
-  "dash.selectedBytes": "已选 {0}"
+  "dash.selectedBytes": "已选 {0}",
+  "settings.diskWithScan": "每次扫描时测量磁盘",
+  "settings.diskWithScan.desc": "扫描同时刷新“磁盘”页面。关闭后只扫描缓存；“磁盘”页面在打开时测量。",
+  "settings.confirmClean": "清理前询问",
+  "settings.confirmClean.desc": "删除任何内容前，显示将删除多少空间和多少个文件。",
+  "target.dev.vmimages.name": "已下载的虚拟机镜像",
+  "target.dev.vmimages.desc": "Lima 和 Colima 为创建虚拟机下载的磁盘镜像。新虚拟机需要时会重新下载。"
 }

@@ -288,12 +288,60 @@ static void TestScanAndClean(void) {
     [NSFileManager.defaultManager removeItemAtPath:base error:nil];
 }
 
+/// VM image downloads live inside ~/Library/Caches: the app-caches target leaves them to their own target, so nothing is
+/// counted (or cleaned) twice. "Skip recent" Off scans even files written a moment ago.
+static void TestNestedTargets(void) {
+    NSString *home = Scratch();
+    setenv("JUNKCLEANUP_HOME", home.fileSystemRepresentation, 1);
+    NSString *(^H)(NSString *) = ^NSString *(NSString *p) { return [home stringByAppendingPathComponent:p]; };
+    Write(H(@"Library/Caches/lima/download/by-url-sha256/abc/data"), 9000);
+    Write(H(@"Library/Caches/lima/other.bin"), 100);
+    Write(H(@"Library/Caches/colima/img.qcow2"), 7000);
+    Write(H(@".colima/_lima/_cache/base.img"), 5000);
+    Write(H(@"Library/Caches/com.example.app/cache.db"), 300);
+
+    CCTarget *caches = nil, *images = nil;
+    for (CCTarget *t in CCCatalog.allTargets) {
+        if ([t.identifier isEqualToString:@"mac.caches"]) caches = t;
+        if ([t.identifier isEqualToString:@"dev.vmimages"]) images = t;
+    }
+    CHECK(images && images.category == CCCategoryDeveloper && images.risk == CCRiskModerate && images.enabledByDefault, @"dev.vmimages");
+    CHECK([images resolveRoots].count == 3, @"dev.vmimages resolved %lu roots", (unsigned long)[images resolveRoots].count);
+
+    CCScanOptions *options = [CCScanOptions new];
+    NSMutableSet *all = [NSMutableSet set];
+    for (CCTarget *t in @[ caches, images ]) [all addObjectsFromArray:[t resolveRoots]];
+    options.excludedRoots = all;
+    options.skipNewerThanHours = 0; // Off: the files above were written just now and still count
+    NSArray<CCScanResult *> *results = [[CCScanEngine new] scanTargets:@[ caches, images ] options:options cancel:nil progress:nil];
+    long long cacheBytes = 0, imageBytes = 0;
+    NSMutableSet *seen = [NSMutableSet set];
+    BOOL twice = NO;
+    for (CCScanResult *r in results) {
+        if (r.target == caches) cacheBytes = r.totalBytes;
+        if (r.target == images) imageBytes = r.totalBytes;
+        for (NSString *f in r.files) {
+            if ([seen containsObject:f]) twice = YES;
+            [seen addObject:f];
+        }
+    }
+    CHECK(!twice, @"a file was scanned by both targets");
+    CHECK(imageBytes == 21000, @"VM images found %lld bytes, expected 21000", imageBytes);
+    CHECK(cacheBytes == 400, @"app caches found %lld bytes, expected 400 (Off skips nothing, images left out)", cacheBytes);
+
+    unsetenv("JUNKCLEANUP_HOME");
+    [NSFileManager.defaultManager removeItemAtPath:home error:nil];
+}
+
 static void TestSettings(void) {
     NSString *file = [Scratch() stringByAppendingPathComponent:@"settings.json"];
     setenv("JUNKCLEANUP_SETTINGS", file.fileSystemRepresentation, 1);
     CCSettings *s = [CCSettings load];
     EQUAL(s.theme, @"dark");
     CHECK(s.useTrash && s.skipRecentHours == 24 && s.animations, @"defaults");
+    CHECK(s.measureDiskWithScan && s.confirmClean, @"disk-with-scan and confirm-clean are on by default");
+    s.measureDiskWithScan = NO;
+    s.confirmClean = NO;
     s.theme = @"light";
     s.useTrash = NO;
     s.targetStates[@"dev.pip"] = @NO;
@@ -303,9 +351,12 @@ static void TestSettings(void) {
     CCSettings *r = [CCSettings load];
     EQUAL(r.theme, @"light");
     CHECK(!r.useTrash, @"useTrash not saved");
+    CHECK(!r.measureDiskWithScan && !r.confirmClean, @"measureDiskWithScan / confirmClean not saved");
     EQUAL(r.targetStates[@"dev.pip"], @NO);
     EQUAL(r.customFolders, @[ @"/tmp/x" ]);
     CHECK(r.lifetimeBytesFreed == 12345, @"lifetime not saved");
+    [r resetToDefaults];
+    CHECK(r.measureDiskWithScan && r.confirmClean, @"reset leaves them off");
     [@"{ not json" writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
     EQUAL([CCSettings load].theme, @"dark");
     unsetenv("JUNKCLEANUP_SETTINGS");
@@ -494,6 +545,7 @@ int main(int argc, const char *argv[]) {
             TestLocalization(folders);
         }
         TestScanAndClean();
+        TestNestedTargets();
         TestSettings();
         if (folders.count == 2) TestDiskMap(folders);
         [NSFileManager.defaultManager removeItemAtPath:home error:nil];

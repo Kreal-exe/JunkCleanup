@@ -392,7 +392,7 @@ static BOOL HasFullDiskAccess(void) {
     void (^go)(BOOL) = ^(BOOL ok) {
         if (ok) [self runClean:selected trash:trash];
     };
-    if (self.confirm) self.confirm(title, body, L(@"clean.confirm"), !trash, go);
+    if (self.confirm && self.settings.confirmClean) self.confirm(title, body, L(@"clean.confirm"), !trash, go);
     else go(YES);
 }
 

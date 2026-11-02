@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "Lebih aman. File bisa dipulihkan, tetapi ruang baru kosong setelah Recycle Bin dikosongkan.",
   "settings.deleteMode.permanent": "Hapus permanen",
   "settings.deleteMode.permanent.desc": "Lebih cepat dan langsung membebaskan ruang. Tidak bisa dibatalkan.",
-  "settings.skipRecent": "Lewati file sementara terbaru",
-  "settings.skipRecent.desc": "File sementara yang lebih baru dari ini mungkin masih digunakan.",
+  "settings.skipRecent": "Lewati berkas yang baru diubah",
+  "settings.skipRecent.desc": "Berkas sementara dan cache aplikasi yang diubah lebih baru dari ini dibiarkan: aplikasi mungkin masih memakainya. “Mati” membersihkan semua yang ditemukan.",
   "settings.skipRecent.off": "Mati",
   "settings.hours": "{0} j",
   "settings.days": "{0} h",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "Data bersama program dan Windows: cache penginstal, lisensi, pengaturan.",
   "space.windows.name": "Windows",
   "space.windows.desc": "Sistem operasi. Perintah (sebagai administrator) menghapus komponen pembaruan yang sudah digantikan.",
-  "dash.selectedBytes": "{0} dipilih"
+  "dash.selectedBytes": "{0} dipilih",
+  "settings.diskWithScan": "Ukur disk di setiap pemindaian",
+  "settings.diskWithScan.desc": "Pemindaian juga memperbarui halaman Disk. Matikan untuk memindai cache saja; Disk lalu diukur saat dibuka.",
+  "settings.confirmClean": "Tanya sebelum membersihkan",
+  "settings.confirmClean.desc": "Tampilkan berapa besar dan berapa berkas yang akan dihapus sebelum menghapus apa pun.",
+  "target.dev.vmimages.name": "Unduhan image VM",
+  "target.dev.vmimages.desc": "Image disk yang diunduh Lima dan Colima untuk membuat mesin virtual. Diunduh lagi saat mesin baru membutuhkannya."
 }

@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "より安全です。ファイルを元に戻せますが、ごみ箱を空にするまで容量は解放されません。",
   "settings.deleteMode.permanent": "完全に削除",
   "settings.deleteMode.permanent.desc": "高速で、容量がすぐに解放されます。元に戻すことはできません。",
-  "settings.skipRecent": "最近の一時ファイルをスキップ",
-  "settings.skipRecent.desc": "これより新しい一時ファイルは、まだ使用中の可能性があります。",
+  "settings.skipRecent": "最近変更されたファイルをスキップ",
+  "settings.skipRecent.desc": "これより新しく変更された一時ファイルとアプリのキャッシュは残します。アプリがまだ使っている可能性があります。「オフ」は見つかったものをすべてクリーンします。",
   "settings.skipRecent.off": "オフ",
   "settings.hours": "{0} 時間",
   "settings.days": "{0} 日",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "プログラムと Windows が共有するデータ：インストーラのキャッシュ、ライセンス、設定。",
   "space.windows.name": "Windows",
   "space.windows.desc": "オペレーティングシステム。コマンド（管理者として）で置き換え済みの更新コンポーネントを削除します。",
-  "dash.selectedBytes": "{0} を選択"
+  "dash.selectedBytes": "{0} を選択",
+  "settings.diskWithScan": "スキャンのたびにディスクを測定",
+  "settings.diskWithScan.desc": "スキャンでディスクページも更新します。オフにするとキャッシュだけをスキャンし、ディスクページは開いたときに測定します。",
+  "settings.confirmClean": "クリーン前に確認",
+  "settings.confirmClean.desc": "削除する前に、容量とファイル数を表示します。",
+  "target.dev.vmimages.name": "ダウンロード済みの VM イメージ",
+  "target.dev.vmimages.desc": "Lima と Colima が仮想マシン作成のためにダウンロードしたディスクイメージ。新しいマシンが必要とするときに再ダウンロードされます。"
 }

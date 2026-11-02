@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "Plus sûr. Les fichiers peuvent être restaurés, mais l'espace n'est libéré qu'une fois la Corbeille vidée.",
   "settings.deleteMode.permanent": "Supprimer définitivement",
   "settings.deleteMode.permanent.desc": "Plus rapide et libère l'espace immédiatement. Irréversible.",
-  "settings.skipRecent": "Ignorer les fichiers temporaires récents",
-  "settings.skipRecent.desc": "Les fichiers temporaires plus récents que ce délai sont peut-être encore utilisés.",
+  "settings.skipRecent": "Ignorer les fichiers modifiés récemment",
+  "settings.skipRecent.desc": "Les fichiers temporaires et caches d’apps modifiés plus récemment sont laissés : une app les utilise peut-être encore. « Désactivé » nettoie tout ce qui est trouvé.",
   "settings.skipRecent.off": "Désactivé",
   "settings.hours": "{0} h",
   "settings.days": "{0} j",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "Données partagées par les programmes et Windows : caches d’installation, licences, réglages.",
   "space.windows.name": "Windows",
   "space.windows.desc": "Le système d’exploitation. La commande (en administrateur) retire les composants de mise à jour remplacés.",
-  "dash.selectedBytes": "{0} sélectionnés"
+  "dash.selectedBytes": "{0} sélectionnés",
+  "settings.diskWithScan": "Mesurer le disque à chaque analyse",
+  "settings.diskWithScan.desc": "L’analyse met aussi à jour la page Disque. Désactivez pour n’analyser que les caches ; la page Disque mesure alors à l’ouverture.",
+  "settings.confirmClean": "Demander avant de nettoyer",
+  "settings.confirmClean.desc": "Montrer combien et combien de fichiers partiront avant toute suppression.",
+  "target.dev.vmimages.name": "Images de VM téléchargées",
+  "target.dev.vmimages.desc": "Images disque téléchargées par Lima et Colima pour créer des machines virtuelles. Retéléchargées quand une nouvelle machine en a besoin."
 }

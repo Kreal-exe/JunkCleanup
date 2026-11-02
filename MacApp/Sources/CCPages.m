@@ -1012,7 +1012,7 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     CCLabel *_title;
     CCPopupField *_language;
     NSArray<CCChip *> *_themeChips, *_skipChips;
-    CCToggle *_animations, *_translucency, *_scanOnStartup, *_useTrash;
+    CCToggle *_animations, *_translucency, *_scanOnStartup, *_useTrash, *_diskWithScan, *_confirmClean;
     CCSettingRow *_deleteRow;
     NSStackView *_folders;
     CCLabel *_noFolders;
@@ -1101,7 +1101,21 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     _skipChips = skipChips;
     CCSettingRow *skipRow = [CCSettingRow rowWithSymbol:@"clock" titleKey:@"settings.skipRecent" descKey:@"settings.skipRecent.desc"
                                                 control:CCHStack(skipChips, 8)];
-    CCCard *cleaningCard = [self sectionCard:@"settings.cleaning" rows:@[ _deleteRow, skipRow ] padding:NSEdgeInsetsMake(18, 24, 10, 24)];
+    _confirmClean = [CCToggle new];
+    _confirmClean.onChange = ^(BOOL on) {
+        M().settings.confirmClean = on;
+        [weak save];
+    };
+    _diskWithScan = [CCToggle new];
+    _diskWithScan.onChange = ^(BOOL on) {
+        M().settings.measureDiskWithScan = on;
+        [weak save];
+    };
+    CCSettingRow *confirmRow = [CCSettingRow rowWithSymbol:@"checkmark.circle" titleKey:@"settings.confirmClean" descKey:@"settings.confirmClean.desc"
+                                                   control:_confirmClean];
+    CCSettingRow *diskRow = [CCSettingRow rowWithSymbol:@"chart.pie" titleKey:@"settings.diskWithScan" descKey:@"settings.diskWithScan.desc"
+                                                control:_diskWithScan];
+    CCCard *cleaningCard = [self sectionCard:@"settings.cleaning" rows:@[ _deleteRow, skipRow, confirmRow, diskRow ] padding:NSEdgeInsetsMake(18, 24, 10, 24)];
 
     // ── custom folders ──
     CCLabel *foldersTitle = H2(@"settings.customFolders");
@@ -1232,6 +1246,8 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     if (_translucency.on != s.translucency) [_translucency setOn:s.translucency animated:self.window != nil];
     if (_scanOnStartup.on != s.scanOnStartup) [_scanOnStartup setOn:s.scanOnStartup animated:self.window != nil];
     if (_useTrash.on != s.useTrash) [_useTrash setOn:s.useTrash animated:self.window != nil];
+    if (_confirmClean.on != s.confirmClean) [_confirmClean setOn:s.confirmClean animated:self.window != nil];
+    if (_diskWithScan.on != s.measureDiskWithScan) [_diskWithScan setOn:s.measureDiskWithScan animated:self.window != nil];
     _deleteRow.titleLabel.stringValue = L(s.useTrash ? @"settings.deleteMode.recycle" : @"settings.deleteMode.permanent");
     _deleteRow.descLabel.stringValue = L(s.useTrash ? @"settings.deleteMode.recycle.desc" : @"settings.deleteMode.permanent.desc");
 

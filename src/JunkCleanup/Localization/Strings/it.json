@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "Più sicuro. I file si possono ripristinare, ma lo spazio si libera solo svuotando il Cestino.",
   "settings.deleteMode.permanent": "Elimina definitivamente",
   "settings.deleteMode.permanent.desc": "Più veloce e libera subito lo spazio. Non è reversibile.",
-  "settings.skipRecent": "Salta i file temporanei recenti",
-  "settings.skipRecent.desc": "I file temporanei più recenti di così potrebbero essere ancora in uso.",
+  "settings.skipRecent": "Salta i file modificati di recente",
+  "settings.skipRecent.desc": "File temporanei e cache delle app modificati più di recente restano: un’app potrebbe usarli ancora. «Off» pulisce tutto ciò che trova.",
   "settings.skipRecent.off": "No",
   "settings.hours": "{0} h",
   "settings.days": "{0} g",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "Dati condivisi da programmi e Windows: cache dei programmi di installazione, licenze, impostazioni.",
   "space.windows.name": "Windows",
   "space.windows.desc": "Il sistema operativo. Il comando (come amministratore) rimuove i componenti di aggiornamento sostituiti.",
-  "dash.selectedBytes": "{0} selezionati"
+  "dash.selectedBytes": "{0} selezionati",
+  "settings.diskWithScan": "Misura il disco a ogni scansione",
+  "settings.diskWithScan.desc": "La scansione aggiorna anche la pagina Disco. Disattiva per analizzare solo le cache; Disco misura all’apertura.",
+  "settings.confirmClean": "Chiedi prima di pulire",
+  "settings.confirmClean.desc": "Mostra quanto e quanti file verranno rimossi prima di eliminare qualcosa.",
+  "target.dev.vmimages.name": "Immagini VM scaricate",
+  "target.dev.vmimages.desc": "Immagini disco scaricate da Lima e Colima per creare macchine virtuali. Riscaricate quando una nuova macchina ne ha bisogno."
 }

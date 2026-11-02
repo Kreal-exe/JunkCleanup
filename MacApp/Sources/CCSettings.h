@@ -14,6 +14,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL animations;
 @property (nonatomic) BOOL translucency;
 @property (nonatomic) BOOL scanOnStartup;
+/// A scan (at launch, "Scan again", after a clean) also measures the disk for the Disk page.
+@property (nonatomic) BOOL measureDiskWithScan;
+/// Clean asks first, showing how much will go.
+@property (nonatomic) BOOL confirmClean;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *targetStates;
 @property (nonatomic, strong) NSMutableArray<NSString *> *customFolders;
 @property (nonatomic) double windowWidth;

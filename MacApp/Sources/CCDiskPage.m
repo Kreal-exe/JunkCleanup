@@ -95,14 +95,14 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
                                                     usingBlock:^(NSNotification *n) {
             CCDiskModel *s = weak;
             BOOL scanning = M().scanning;
-            if (s && scanning && !s->_wasScanning) [s analyze];
+            if (s && scanning && !s->_wasScanning && M().settings.measureDiskWithScan) [s analyze];
             if (s) s->_wasScanning = scanning;
         }];
         [NSNotificationCenter.defaultCenter addObserverForName:CCModelCleanStateNotification object:nil queue:nil
                                                     usingBlock:^(NSNotification *n) {
             CCDiskModel *s = weak;
             BOOL cleaning = M().cleaning;
-            if (s && !cleaning && s->_wasCleaning) [s analyze];
+            if (s && !cleaning && s->_wasCleaning && M().settings.measureDiskWithScan) [s analyze];
             if (s) s->_wasCleaning = cleaning;
         }];
     }

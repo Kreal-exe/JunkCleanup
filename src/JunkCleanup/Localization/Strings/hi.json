@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "अधिक सुरक्षित। फ़ाइलें वापस लाई जा सकती हैं, पर जगह तभी खाली होती है जब बिन खाली किया जाए।",
   "settings.deleteMode.permanent": "स्थायी रूप से हटाएँ",
   "settings.deleteMode.permanent.desc": "तेज़ और जगह तुरंत खाली करता है। पूर्ववत नहीं किया जा सकता।",
-  "settings.skipRecent": "हाल की अस्थायी फ़ाइलें छोड़ें",
-  "settings.skipRecent.desc": "इससे नई अस्थायी फ़ाइलें अभी उपयोग में हो सकती हैं।",
+  "settings.skipRecent": "हाल में बदली फ़ाइलें छोड़ें",
+  "settings.skipRecent.desc": "इससे नई बदली अस्थायी फ़ाइलें और ऐप कैश छोड़ दिए जाते हैं: हो सकता है कोई ऐप अब भी उन्हें इस्तेमाल कर रहा हो। “बंद” मिली हर चीज़ साफ़ करता है।",
   "settings.skipRecent.off": "बंद",
   "settings.hours": "{0} घं",
   "settings.days": "{0} दि",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "प्रोग्राम और Windows का साझा डेटा: इंस्टॉलर कैश, लाइसेंस, सेटिंग्स।",
   "space.windows.name": "Windows",
   "space.windows.desc": "ऑपरेटिंग सिस्टम। कमांड (एडमिन के रूप में) बदले जा चुके अपडेट घटक हटाता है।",
-  "dash.selectedBytes": "{0} चुना गया"
+  "dash.selectedBytes": "{0} चुना गया",
+  "settings.diskWithScan": "हर स्कैन के साथ डिस्क मापें",
+  "settings.diskWithScan.desc": "स्कैन डिस्क पेज भी ताज़ा करता है। सिर्फ़ कैश स्कैन करने के लिए बंद करें; तब डिस्क पेज खोलने पर मापा जाता है।",
+  "settings.confirmClean": "साफ़ करने से पहले पूछें",
+  "settings.confirmClean.desc": "कुछ भी हटाने से पहले दिखाएँ कि कितना और कितनी फ़ाइलें जाएँगी।",
+  "target.dev.vmimages.name": "डाउनलोड की गई VM इमेज",
+  "target.dev.vmimages.desc": "वर्चुअल मशीन बनाने के लिए Lima और Colima की डाउनलोड डिस्क इमेज। नई मशीन को ज़रूरत पड़ने पर फिर डाउनलोड होती हैं।"
 }

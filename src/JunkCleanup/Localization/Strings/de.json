@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "Sicherer. Dateien können wiederhergestellt werden, Speicher wird aber erst nach dem Leeren des Papierkorbs frei.",
   "settings.deleteMode.permanent": "Endgültig löschen",
   "settings.deleteMode.permanent.desc": "Schneller und gibt Speicher sofort frei. Kann nicht rückgängig gemacht werden.",
-  "settings.skipRecent": "Neue temporäre Dateien überspringen",
-  "settings.skipRecent.desc": "Temporäre Dateien, die jünger sind, werden möglicherweise noch verwendet.",
+  "settings.skipRecent": "Kürzlich geänderte Dateien überspringen",
+  "settings.skipRecent.desc": "Temporäre Dateien und App-Caches, die jünger sind, bleiben unberührt: Eine App nutzt sie vielleicht noch. „Aus“ bereinigt alles Gefundene.",
   "settings.skipRecent.off": "Aus",
   "settings.hours": "{0} h",
   "settings.days": "{0} T",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "Von Programmen und Windows gemeinsam genutzte Daten: Installer-Caches, Lizenzen, Einstellungen.",
   "space.windows.name": "Windows",
   "space.windows.desc": "Das Betriebssystem. Der Befehl (als Administrator) entfernt ersetzte Update-Komponenten.",
-  "dash.selectedBytes": "{0} ausgewählt"
+  "dash.selectedBytes": "{0} ausgewählt",
+  "settings.diskWithScan": "Speicher bei jedem Scan messen",
+  "settings.diskWithScan.desc": "Der Scan aktualisiert auch die Seite „Speicher“. Ausschalten, um nur Caches zu scannen; die Seite misst dann beim Öffnen.",
+  "settings.confirmClean": "Vor dem Bereinigen fragen",
+  "settings.confirmClean.desc": "Zeigen, wie viel und wie viele Dateien entfernt werden, bevor etwas gelöscht wird.",
+  "target.dev.vmimages.name": "Heruntergeladene VM-Abbilder",
+  "target.dev.vmimages.desc": "Festplattenabbilder, die Lima und Colima für virtuelle Maschinen geladen haben. Werden für eine neue Maschine erneut geladen."
 }

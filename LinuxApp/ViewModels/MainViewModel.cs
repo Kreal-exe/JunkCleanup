@@ -311,8 +311,8 @@ public sealed partial class MainViewModel : ObservableObject
 
         _scanCts = new CancellationTokenSource();
         IsScanning = true;
-        // One scan: the disk map is measured alongside the caches.
-        if (!Disk.IsAnalyzing) _ = Disk.Analyze();
+        // One scan: the disk map is measured alongside the caches (unless that is switched off).
+        if (_settings.MeasureDiskWithScan && !Disk.IsAnalyzing) _ = Disk.Analyze();
         HasResults = false;
         NothingFound = false;
         LiveBytes = 0;
@@ -397,7 +397,7 @@ public sealed partial class MainViewModel : ObservableObject
         var files = selected.Sum(t => (long)t.FileCount);
         var recycle = _settings.UseRecycleBin;
 
-        var ok = await _dialogs.ConfirmAsync(
+        var ok = !_settings.ConfirmClean || await _dialogs.ConfirmAsync(
             Loc.Format("clean.confirmTitle", ByteFormatter.Format(bytes)),
             Loc.Format(recycle ? "clean.confirmRecycle" : "clean.confirmPermanent", ByteFormatter.FormatCount(files), selected.Count),
             Loc["clean.confirm"],
@@ -478,7 +478,7 @@ public sealed partial class MainViewModel : ObservableObject
         var freed = report.BytesFreed;
         SetStatus(() => Loc.Format("dash.cleaned", ByteFormatter.Format(freed)));
         // The disk changed: measure it again in the background.
-        if (!Disk.IsAnalyzing) _ = Disk.Analyze();
+        if (_settings.MeasureDiskWithScan && !Disk.IsAnalyzing) _ = Disk.Analyze();
     }
 
     /// <summary>Stops a running clean; files already removed stay removed, the rest are left alone.</summary>
@@ -742,6 +742,8 @@ public sealed partial class MainViewModel : ObservableObject
         Settings.Animations = true;
         Settings.ScanOnStartup = true;
         Settings.SkipRecentHours = 24;
+        Settings.MeasureDiskWithScan = true;
+        Settings.ConfirmClean = true;
         Settings.Theme = "dark";
         Settings.SelectedLanguage = Settings.Languages[0];
 

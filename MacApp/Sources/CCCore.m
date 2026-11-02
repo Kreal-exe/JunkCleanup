@@ -322,6 +322,9 @@ static NSArray *Join(NSArray *a, NSArray *b) { return [a arrayByAddingObjectsFro
             T(@"dev.conda", CCCategoryDeveloper, @"cube", CCRiskModerate,
               @[ @"~/miniconda3/pkgs", @"~/anaconda3/pkgs", @"~/miniforge3/pkgs", @"~/opt/miniconda3/pkgs", @"~/opt/anaconda3/pkgs" ]),
             T(@"dev.android", CCCategoryDeveloper, @"cube", CCRiskSafe, @[ @"~/.android/cache", @"~/.android/build-cache" ]),
+            // Base images Lima and Colima download to create machines; inside ~/Library/Caches, which leaves them to this target.
+            T(@"dev.vmimages", CCCategoryDeveloper, @"cube", CCRiskModerate,
+              @[ [LC stringByAppendingString:@"/lima/download"], [LC stringByAppendingString:@"/colima"], @"~/.colima/_lima/_cache" ]),
             T(@"dev.vscode", CCCategoryDeveloper, @"curlybraces", CCRiskSafe,
               Join(Electron([AS stringByAppendingString:@"/Code"]),
                    @[ [AS stringByAppendingString:@"/Code/CachedData"], [AS stringByAppendingString:@"/Code/CachedExtensionVSIXs"],

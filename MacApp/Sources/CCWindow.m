@@ -617,7 +617,7 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
     __weak CCWindowController *weak = self;
     __block NSInteger step = 0;
     __block BOOL settled = NO, diskSettled = NO;
-    NSArray *shots = @[ @"dashboard", @"targets", @"disk", @"settings", @"about", @"insights", @"light", @"expanded", @"details", @"confirm" ];
+    NSArray *shots = @[ @"dashboard", @"targets", @"disk", @"settings", @"settings-cleaning", @"about", @"insights", @"light", @"expanded", @"details", @"confirm" ];
     // --capture-clean also runs the clean it asked about (into the Trash by default) and shoots the result.
     if ([NSProcessInfo.processInfo.arguments containsObject:@"--capture-clean"]) shots = [shots arrayByAddingObject:@"cleaning"];
     // --page disk shoots only the Disk page: the map, then an item with its parts open. Nothing is scanned or removed.
@@ -692,6 +692,10 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
             resize(MIN(1240, NSWidth(s.window.screen.visibleFrame) - 16));
         }
         else if ([shot isEqualToString:@"settings"]) M().page = CCPageSettings;
+        else if ([shot isEqualToString:@"settings-cleaning"]) {
+            NSScrollView *scroll = s->_pages[CCPageSettings].subviews.firstObject;
+            [scroll.documentView scrollPoint:NSMakePoint(0, 560)];
+        }
         else if ([shot isEqualToString:@"about"]) M().page = CCPageAbout;
         else if ([shot isEqualToString:@"insights"]) {
             M().page = CCPageDashboard;
@@ -716,7 +720,8 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
         } else if ([shot isEqualToString:@"confirm"]) {
             [M() closeDetails];
             M().page = CCPageDashboard;
-            [M() clean];
+            // Only to shoot the question: with "Ask before cleaning" off, Clean would start right away.
+            if (M().settings.confirmClean) [M() clean];
         } else if ([shot isEqualToString:@"cleaning"]) {
             [s->_confirm closeWith:YES];
             after(0.5, next);

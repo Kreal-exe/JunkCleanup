@@ -47,6 +47,12 @@
                     <c:SettingRow Glyph="TrashCanOutline" Title="{Binding Settings.DeleteModeLabel}" Description="{Binding Settings.DeleteModeDescription}">
                         <CheckBox Classes="toggle" IsChecked="{Binding Settings.UseRecycleBin}" />
                     </c:SettingRow>
+                    <c:SettingRow Glyph="AlertCircleOutline" Title="{loc:Str settings.confirmClean}" Description="{loc:Str settings.confirmClean.desc}">
+                        <CheckBox Classes="toggle" IsChecked="{Binding Settings.ConfirmClean}" />
+                    </c:SettingRow>
+                    <c:SettingRow Glyph="ChartDonut" Title="{loc:Str settings.diskWithScan}" Description="{loc:Str settings.diskWithScan.desc}">
+                        <CheckBox Classes="toggle" IsChecked="{Binding Settings.MeasureDiskWithScan}" />
+                    </c:SettingRow>
                     <c:SettingRow Glyph="ClockOutline" Title="{loc:Str settings.skipRecent}" Description="{loc:Str settings.skipRecent.desc}" BorderThickness="0">
                         <WrapPanel>
                             <Button Classes="chip" Classes.active="{Binding Settings.SkipRecentHours, Converter={x:Static c:EqualsConverter.Instance}, ConverterParameter=0}"

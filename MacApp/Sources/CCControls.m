@@ -614,7 +614,8 @@ static void ForEachTile(NSView *view, void (^block)(CCIconTile *)) {
         _leading = [_content.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.leadingAnchor constant:self.padding.left];
         _trailing = [self.trailingAnchor constraintGreaterThanOrEqualToAnchor:_content.trailingAnchor constant:self.padding.right];
         NSLayoutConstraint *hug = [self.widthAnchor constraintEqualToAnchor:_content.widthAnchor constant:self.padding.left + self.padding.right];
-        hug.priority = NSLayoutPriorityDefaultLow;
+        // Above a settings row's pull on its control (600), so a button keeps its own width; a required width still wins.
+        hug.priority = 650;
         [NSLayoutConstraint activateConstraints:@[
             _top, _bottom, _leading, _trailing, hug,
             [_content.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],

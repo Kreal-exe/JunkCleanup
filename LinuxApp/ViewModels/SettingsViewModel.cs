@@ -32,6 +32,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _animations = settings.Animations;
         _scanOnStartup = settings.ScanOnStartup;
         _skipRecentHours = settings.SkipRecentHours;
+        _measureDiskWithScan = settings.MeasureDiskWithScan;
+        _confirmClean = settings.ConfirmClean;
         _theme = settings.Theme;
 
         RebuildLanguages();
@@ -73,6 +75,20 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _animations;
     [ObservableProperty] private bool _scanOnStartup;
     [ObservableProperty] private int _skipRecentHours;
+    [ObservableProperty] private bool _measureDiskWithScan;
+    [ObservableProperty] private bool _confirmClean;
+
+    partial void OnMeasureDiskWithScanChanged(bool value)
+    {
+        _settings.MeasureDiskWithScan = value;
+        _save();
+    }
+
+    partial void OnConfirmCleanChanged(bool value)
+    {
+        _settings.ConfirmClean = value;
+        _save();
+    }
 
     partial void OnSelectedLanguageChanged(LanguageOption? value)
     {

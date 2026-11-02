@@ -16,6 +16,8 @@
     _animations = YES;
     _translucency = YES;
     _scanOnStartup = YES;
+    _measureDiskWithScan = YES;
+    _confirmClean = YES;
     _targetStates = [NSMutableDictionary dictionary];
     _customFolders = [NSMutableArray array];
 }
@@ -54,6 +56,8 @@ static id Get(NSDictionary *d, NSString *key, Class type) {
     if ((n = Get(d, @"backdrop", NSNumber.class))) s.translucency = n.boolValue;
     // Not "scanOnStartup": 1.0.0 builds saved that as false by default, which must not keep the new default from them.
     if ((n = Get(d, @"scanOnLaunch", NSNumber.class))) s.scanOnStartup = n.boolValue;
+    if ((n = Get(d, @"measureDiskWithScan", NSNumber.class))) s.measureDiskWithScan = n.boolValue;
+    if ((n = Get(d, @"confirmClean", NSNumber.class))) s.confirmClean = n.boolValue;
     if ((n = Get(d, @"windowWidth", NSNumber.class))) s.windowWidth = n.doubleValue;
     if ((n = Get(d, @"windowHeight", NSNumber.class))) s.windowHeight = n.doubleValue;
     if ((n = Get(d, @"lifetimeBytesFreed", NSNumber.class))) s.lifetimeBytesFreed = n.longLongValue;
@@ -75,6 +79,8 @@ static id Get(NSDictionary *d, NSString *key, Class type) {
         @"animations": @(self.animations),
         @"backdrop": @(self.translucency),
         @"scanOnLaunch": @(self.scanOnStartup),
+        @"measureDiskWithScan": @(self.measureDiskWithScan),
+        @"confirmClean": @(self.confirmClean),
         @"targetStates": self.targetStates,
         @"customFolders": self.customFolders,
         @"windowWidth": @(self.windowWidth),

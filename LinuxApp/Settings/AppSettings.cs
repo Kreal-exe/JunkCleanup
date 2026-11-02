@@ -14,6 +14,12 @@ public sealed class AppSettings
 
     public bool UseRecycleBin { get; set; } = true;
     public int SkipRecentHours { get; set; } = 24;
+
+    /// <summary>A scan also measures the disk for the Disk page.</summary>
+    public bool MeasureDiskWithScan { get; set; } = true;
+
+    /// <summary>Clean asks first, with the size and the number of files.</summary>
+    public bool ConfirmClean { get; set; } = true;
     public bool Animations { get; set; } = true;
     /// <summary>Stored as "scanOnLaunch": 1.0.0 builds saved "scanOnStartup": false by default, and that old value must not
     /// keep the new default (scan on launch) from reaching them.</summary>

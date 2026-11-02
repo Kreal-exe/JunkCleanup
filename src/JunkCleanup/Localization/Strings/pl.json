@@ -108,8 +108,8 @@
   "settings.deleteMode.recycle.desc": "Bezpieczniej. Pliki można przywrócić, ale miejsce zwalnia się dopiero po opróżnieniu Kosza.",
   "settings.deleteMode.permanent": "Usuwaj trwale",
   "settings.deleteMode.permanent.desc": "Szybciej i od razu zwalnia miejsce. Nie można cofnąć.",
-  "settings.skipRecent": "Pomijaj najnowsze pliki tymczasowe",
-  "settings.skipRecent.desc": "Pliki tymczasowe nowsze niż ten limit mogą być nadal w użyciu.",
+  "settings.skipRecent": "Pomijaj ostatnio zmienione pliki",
+  "settings.skipRecent.desc": "Pliki tymczasowe i pamięć aplikacji zmienione później zostają: aplikacja może ich jeszcze używać. „Wył.” czyści wszystko, co znaleziono.",
   "settings.skipRecent.off": "Wyłączone",
   "settings.hours": "{0} godz.",
   "settings.days": "{0} dni",
@@ -363,5 +363,11 @@
   "space.programdata.desc": "Dane wspólne programów i Windows: pamięć instalatorów, licencje, ustawienia.",
   "space.windows.name": "Windows",
   "space.windows.desc": "System operacyjny. Polecenie (jako administrator) usuwa zastąpione składniki aktualizacji.",
-  "dash.selectedBytes": "wybrano {0}"
+  "dash.selectedBytes": "wybrano {0}",
+  "settings.diskWithScan": "Mierz dysk przy każdym skanowaniu",
+  "settings.diskWithScan.desc": "Skanowanie odświeża też stronę Dysk. Wyłącz, by skanować tylko pamięć podręczną; Dysk mierzy się wtedy przy otwarciu.",
+  "settings.confirmClean": "Pytaj przed czyszczeniem",
+  "settings.confirmClean.desc": "Pokaż, ile i ile plików zniknie, zanim cokolwiek zostanie usunięte.",
+  "target.dev.vmimages.name": "Pobrane obrazy maszyn wirtualnych",
+  "target.dev.vmimages.desc": "Obrazy dysków pobrane przez Lima i Colima do tworzenia maszyn wirtualnych. Pobierane ponownie, gdy nowa maszyna ich potrzebuje."
 }
