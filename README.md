@@ -52,17 +52,13 @@ the Windows app's scan and clean engine and looks the same.
 
 ## Screenshots
 
-| Targets | Cleaning |
+| Targets | Largest targets |
 |:--:|:--:|
-| <img src="docs/targets.png" width="440" alt="Targets"> | <img src="docs/cleaning.png" width="440" alt="Cleaning"> |
+| <img src="docs/targets.png" width="440" alt="Targets"> | <img src="docs/largest.png" width="440" alt="Largest targets"> |
 
-| Light theme | Largest targets |
+| Light theme | Settings |
 |:--:|:--:|
-| <img src="docs/light.png" width="440" alt="Light theme"> | <img src="docs/largest.png" width="440" alt="Largest targets"> |
-
-| Settings | Insights |
-|:--:|:--:|
-| <img src="docs/settings.png" width="440" alt="Settings"> | <img src="docs/insights.png" width="440" alt="Insights"> |
+| <img src="docs/light.png" width="440" alt="Light theme"> | <img src="docs/settings.png" width="440" alt="Settings"> |
 
 ## macOS
 
@@ -74,9 +70,13 @@ the Windows app's scan and clean engine and looks the same.
 |:--:|:--:|
 | <img src="docs/mac-targets.png" width="440" alt="Targets on macOS"> | <img src="docs/mac-light.png" width="440" alt="Light theme on macOS"> |
 
-| Largest entries | Cleaning |
+| Disk map | Hermes Agent, part by part |
 |:--:|:--:|
-| <img src="docs/mac-expanded.png" width="440" alt="Expanded target on macOS"> | <img src="docs/mac-cleaning.png" width="440" alt="Cleaning on macOS"> |
+| <img src="docs/mac-disk.png" width="440" alt="Disk page on macOS"> | <img src="docs/mac-disk-parts.png" width="440" alt="Hermes split into Keep and Careful parts on macOS"> |
+
+| Largest entries | Settings |
+|:--:|:--:|
+| <img src="docs/mac-expanded.png" width="440" alt="Expanded target on macOS"> | <img src="docs/mac-settings.png" width="440" alt="Settings on macOS"> |
 
 <p align="center">
   <img src="docs/mac-details.png" width="900" alt="A target's contents, each entry removable on its own">
