@@ -39,11 +39,11 @@ jobs:
           Shot dashboard Dashboard dark
           Shot dashboard-more Dashboard dark -Wheel -8
           Shot targets Targets dark
-          Shot disk Disk dark -Wait 30
-          Shot disk-more Disk dark -Wheel -6 -Wait 30
+          Shot disk Disk dark -Wait 150
+          Shot disk-more Disk dark -Wheel -6 -Wait 150
           Shot settings Settings dark
           Shot light Dashboard light
-          Shot light-disk Disk light -Wait 30
+          Shot light-disk Disk light -Wait 150
 
       - uses: actions/upload-artifact@v4
         with:
