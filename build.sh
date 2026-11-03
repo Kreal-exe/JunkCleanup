@@ -68,11 +68,27 @@ codesign --force --deep --sign - "$APP" >/dev/null 2>&1
 codesign --verify --strict "$APP"
 
 if [ "$DMG" = 1 ]; then
-  # The app next to a link to Applications: open the image, drag one onto the other.
+  # The app next to a link to Applications: open the image, drag one onto the other. The script next to them clears
+  # the quarantine flag the download put on the unnotarized app (copying it to Applications first if needed) and opens it.
   STAGE="$OUT/dmg"
   mkdir -p "$STAGE" "$ROOT/dist"
   ditto "$APP" "$STAGE/$NAME.app"
   ln -s /Applications "$STAGE/Applications"
+  cat > "$STAGE/Allow JunkCleanup to open.command" <<'SCRIPT'
+#!/bin/bash
+# Clears the quarantine flag from JunkCleanup in Applications so it opens with a double-click.
+# Copies it there from this disk image first when it is not installed yet.
+APP="/Applications/JunkCleanup.app"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+if [ ! -d "$APP" ]; then
+  echo "Copying JunkCleanup to Applications..."
+  ditto "$HERE/JunkCleanup.app" "$APP" || { echo "Could not copy it. Drag JunkCleanup onto Applications, then run this again."; exit 1; }
+fi
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || sudo xattr -dr com.apple.quarantine "$APP"
+echo "Done: JunkCleanup is allowed to open."
+open "$APP"
+SCRIPT
+  chmod +x "$STAGE/Allow JunkCleanup to open.command"
   DMGFILE="$ROOT/dist/$NAME-macOS-v$VERSION.dmg"
   rm -f "$DMGFILE"
   hdiutil create -volname "$NAME" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMGFILE" >/dev/null

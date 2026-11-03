@@ -316,7 +316,7 @@
   "risk.Keep.desc": "Nécessaire au système ou à une app, ou vos propres fichiers. Montré pour savoir où va la place ; supprimez-le avec l’app concernée.",
   "space.caches.name": "Caches que JunkCleanup nettoie",
   "space.caches.desc": "Tout ce que la page Cibles a trouvé sur ce disque.",
-  "space.folder.desc": "Pas un cache connu. Supprimez-le seulement si vous savez que vous n’en avez plus besoin.",
+  "space.folder.desc": "Données d’une app ou d’un outil que le nettoyeur ne connaît pas. Supprimez-les seulement si vous n’utilisez plus cette app.",
   "space.personal.desc": "Vos propres fichiers. Affichés ici, jamais supprimés par l’app.",
   "space.small.name": "Petits dossiers",
   "space.small.desc": "Dossiers de moins de 64 Mo chacun.",

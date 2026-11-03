@@ -316,7 +316,7 @@
   "risk.Keep.desc": "시스템이나 앱에 필요하거나 내 파일입니다. 공간이 어디로 가는지 보여 주려고 표시합니다. 해당 앱에서 제거하세요.",
   "space.caches.name": "JunkCleanup이 정리하는 캐시",
   "space.caches.desc": "‘대상’ 페이지에서 이 디스크에서 찾은 모든 항목입니다.",
-  "space.folder.desc": "알려진 캐시가 아닙니다. 더 이상 필요 없다고 확신할 때만 삭제하세요.",
+  "space.folder.desc": "클리너가 모르는 앱이나 도구의 데이터입니다. 해당 앱을 더 이상 사용하지 않을 때만 삭제하세요.",
   "space.personal.desc": "내 파일입니다. 표시만 하며 앱이 삭제하지 않습니다.",
   "space.small.name": "작은 폴더",
   "space.small.desc": "각각 64MB 미만인 폴더입니다.",

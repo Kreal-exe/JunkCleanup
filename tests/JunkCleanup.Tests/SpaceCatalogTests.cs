@@ -72,4 +72,46 @@ public class SpaceCatalogTests
         Assert.Equal(scope.Roots, SpaceCatalog.Scope().Roots);
         Assert.Equal(SpaceCatalog.HomeDrive, scope.Roots[^1].Pattern);
     }
+
+    [Fact]
+    public async Task Folders_at_a_drive_root_are_the_users_own_files()
+    {
+        var root = Directory.CreateTempSubdirectory("jc-drive-").FullName;
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "other"));
+            File.WriteAllBytes(Path.Combine(root, "other", "photo.jpg"), new byte[4096]);
+            Directory.CreateDirectory(Path.Combine(root, ".tool"));
+            File.WriteAllBytes(Path.Combine(root, ".tool", "state.db"), new byte[4096]);
+            Directory.CreateDirectory(Path.Combine(root, "Program Files"));
+            File.WriteAllBytes(Path.Combine(root, "Program Files", "app.exe"), new byte[4096]);
+            var scope = new SpaceScope
+            {
+                Rules = [], Roots = [(root, SpaceSegment.Files)], VolumePath = root,
+                Filed = [(Path.Combine(root, "Program Files"), SpaceSegment.Apps)], KeepNames = ["Program Files"],
+                Glyphs = ("f", "p", "c"),
+            };
+            var report = await new DiskMapEngine().AnalyzeAsync(scope, [], null, CancellationToken.None);
+            var all = report.Items.SelectMany(i => i.Children.Prepend(i)).ToList();
+
+            var mine = all.Single(e => e.Name == "other");
+            Assert.Equal(SpaceSegment.Files, mine.Segment);
+            Assert.Equal(SpaceRisk.Keep, mine.Risk);
+            Assert.Equal("space.personal", mine.Key);
+            Assert.False(mine.CanDelete);
+
+            var tool = all.Single(e => e.Name == ".tool");
+            Assert.Equal(SpaceSegment.Other, tool.Segment);
+            Assert.Equal("space.folder", tool.Key);
+
+            var apps = all.Single(e => e.Name == "Program Files");
+            Assert.Equal(SpaceSegment.Apps, apps.Segment);
+            Assert.Equal("space.folder", apps.Key);
+            Assert.False(apps.CanDelete);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

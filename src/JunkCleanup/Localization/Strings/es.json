@@ -316,7 +316,7 @@
   "risk.Keep.desc": "Lo necesita el sistema o una app, o son tus archivos. Se muestra para que veas adónde va el espacio; elimínalo con la app que lo usa.",
   "space.caches.name": "Cachés que limpia JunkCleanup",
   "space.caches.desc": "Todo lo de la página Objetivos que se encontró en este disco.",
-  "space.folder.desc": "No es una caché conocida. Bórrala solo si sabes que ya no la necesitas.",
+  "space.folder.desc": "Datos de una app o herramienta que el limpiador no conoce. Bórralos solo si ya no usas esa app.",
   "space.personal.desc": "Tus propios archivos. Se muestran aquí, la app nunca los borra.",
   "space.small.name": "Carpetas pequeñas",
   "space.small.desc": "Carpetas de menos de 64 MB cada una.",

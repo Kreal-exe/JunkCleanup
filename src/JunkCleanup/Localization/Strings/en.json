@@ -316,7 +316,7 @@
   "risk.Keep.desc": "Needed by the system or an app, or your own files. Shown so you know where the space goes; remove it with the app that owns it.",
   "space.caches.name": "Caches JunkCleanup can clean",
   "space.caches.desc": "Everything on the Targets page that was found on this disk.",
-  "space.folder.desc": "Not a known cache. Delete it only if you know you no longer need it.",
+  "space.folder.desc": "Data of an app or tool the cleaner does not know. Delete it only if you no longer use that app.",
   "space.personal.desc": "Your own files. Shown here, never removed by the app.",
   "space.small.name": "Smaller folders",
   "space.small.desc": "Folders under 64 MB each.",

@@ -316,7 +316,7 @@
   "risk.Keep.desc": "Nodig voor het systeem of een app, of je eigen bestanden. Getoond zodat je ziet waar de ruimte heen gaat; verwijder het met de app die erbij hoort.",
   "space.caches.name": "Caches die JunkCleanup opruimt",
   "space.caches.desc": "Alles van de pagina Doelen dat op deze schijf is gevonden.",
-  "space.folder.desc": "Geen bekende cache. Verwijder het alleen als je zeker weet dat je het niet meer nodig hebt.",
+  "space.folder.desc": "Gegevens van een app of tool die de cleaner niet kent. Verwijder ze alleen als je die app niet meer gebruikt.",
   "space.personal.desc": "Je eigen bestanden. Alleen getoond, nooit door de app verwijderd.",
   "space.small.name": "Kleinere mappen",
   "space.small.desc": "Mappen onder 64 MB elk.",

@@ -316,7 +316,7 @@
   "risk.Keep.desc": "系統或 App 需要，或是你自己的檔案。顯示出來是為了讓你知道空間去向；請透過所屬 App 刪除。",
   "space.caches.name": "JunkCleanup 可清理的快取",
   "space.caches.desc": "「目標」頁面中在此磁碟上找到的全部內容。",
-  "space.folder.desc": "不是已知的快取。僅在確定不再需要時刪除。",
+  "space.folder.desc": "清理工具不認識的應用程式或工具的資料。僅在不再使用該應用程式時刪除。",
   "space.personal.desc": "你自己的檔案。僅在此顯示，App 絕不會刪除。",
   "space.small.name": "較小的資料夾",
   "space.small.desc": "每個小於 64 MB 的資料夾。",

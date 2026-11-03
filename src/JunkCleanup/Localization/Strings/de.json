@@ -316,7 +316,7 @@
   "risk.Keep.desc": "Vom System oder einer App benötigt oder deine eigenen Dateien. Wird gezeigt, damit du siehst, wohin der Platz geht; entferne es mit der zugehörigen App.",
   "space.caches.name": "Caches, die JunkCleanup bereinigt",
   "space.caches.desc": "Alles von der Seite „Ziele“, was auf diesem Laufwerk gefunden wurde.",
-  "space.folder.desc": "Kein bekannter Cache. Lösche ihn nur, wenn du sicher bist, dass du ihn nicht mehr brauchst.",
+  "space.folder.desc": "Daten einer App oder eines Tools, das der Cleaner nicht kennt. Nur löschen, wenn Sie die App nicht mehr nutzen.",
   "space.personal.desc": "Deine eigenen Dateien. Nur angezeigt, nie von der App entfernt.",
   "space.small.name": "Kleinere Ordner",
   "space.small.desc": "Ordner unter je 64 MB.",

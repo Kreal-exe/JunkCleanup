@@ -316,7 +316,7 @@
   "risk.Keep.desc": "Necessário ao sistema ou a uma app, ou ficheiros seus. Mostrado para saber para onde vai o espaço; remova-o com a app a que pertence.",
   "space.caches.name": "Caches que o JunkCleanup limpa",
   "space.caches.desc": "Tudo da página Alvos que foi encontrado neste disco.",
-  "space.folder.desc": "Não é uma cache conhecida. Apague apenas se souber que já não precisa.",
+  "space.folder.desc": "Dados de um app ou ferramenta que o limpador não conhece. Apague só se não usar mais esse app.",
   "space.personal.desc": "Os seus próprios ficheiros. Mostrados aqui, nunca removidos pela app.",
   "space.small.name": "Pastas mais pequenas",
   "space.small.desc": "Pastas com menos de 64 MB cada.",

@@ -316,7 +316,7 @@
   "risk.Keep.desc": "Sistemin veya bir uygulamanın ihtiyacı ya da kendi dosyalarınız. Alanın nereye gittiğini görmeniz için gösterilir; sahibi olan uygulamayla kaldırın.",
   "space.caches.name": "JunkCleanup'ın temizlediği önbellekler",
   "space.caches.desc": "Hedefler sayfasında bu diskte bulunan her şey.",
-  "space.folder.desc": "Bilinen bir önbellek değil. Yalnızca artık gerekmediğinden eminseniz silin.",
+  "space.folder.desc": "Temizleyicinin tanımadığı bir uygulamanın verileri. Yalnızca o uygulamayı artık kullanmıyorsanız silin.",
   "space.personal.desc": "Kendi dosyalarınız. Burada gösterilir, uygulama asla silmez.",
   "space.small.name": "Daha küçük klasörler",
   "space.small.desc": "Her biri 64 MB'tan küçük klasörler.",

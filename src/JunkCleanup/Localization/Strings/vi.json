@@ -316,7 +316,7 @@
   "risk.Keep.desc": "Hệ thống hoặc ứng dụng cần, hoặc là tệp của bạn. Được hiển thị để bạn biết dung lượng đi đâu; hãy xoá bằng ứng dụng sở hữu nó.",
   "space.caches.name": "Bộ nhớ đệm JunkCleanup dọn được",
   "space.caches.desc": "Mọi thứ trên trang Mục tiêu đã tìm thấy trên ổ đĩa này.",
-  "space.folder.desc": "Không phải bộ nhớ đệm đã biết. Chỉ xoá khi bạn chắc chắn không cần nữa.",
+  "space.folder.desc": "Dữ liệu của ứng dụng hoặc công cụ mà trình dọn dẹp không biết. Chỉ xóa nếu bạn không còn dùng ứng dụng đó.",
   "space.personal.desc": "Tệp của chính bạn. Chỉ hiển thị, ứng dụng không bao giờ xoá.",
   "space.small.name": "Thư mục nhỏ hơn",
   "space.small.desc": "Mỗi thư mục dưới 64 MB.",

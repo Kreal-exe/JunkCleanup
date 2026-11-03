@@ -316,7 +316,7 @@
   "risk.Keep.desc": "Dibutuhkan sistem atau aplikasi, atau berkas Anda sendiri. Ditampilkan agar Anda tahu ke mana ruang terpakai; hapus lewat aplikasi pemiliknya.",
   "space.caches.name": "Cache yang dibersihkan JunkCleanup",
   "space.caches.desc": "Semua dari halaman Target yang ditemukan di disk ini.",
-  "space.folder.desc": "Bukan cache yang dikenal. Hapus hanya jika Anda yakin tidak membutuhkannya lagi.",
+  "space.folder.desc": "Data aplikasi atau alat yang tidak dikenali pembersih. Hapus hanya jika Anda tidak lagi memakai aplikasi itu.",
   "space.personal.desc": "Berkas Anda sendiri. Hanya ditampilkan, tidak pernah dihapus aplikasi.",
   "space.small.name": "Folder lebih kecil",
   "space.small.desc": "Folder di bawah 64 MB masing-masing.",

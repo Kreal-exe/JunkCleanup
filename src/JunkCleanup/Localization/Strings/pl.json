@@ -316,7 +316,7 @@
   "risk.Keep.desc": "Potrzebne systemowi lub aplikacji albo to Twoje pliki. Pokazane, by było widać, gdzie idzie miejsce; usuwaj przez aplikację, do której należy.",
   "space.caches.name": "Pamięć podręczna czyszczona przez JunkCleanup",
   "space.caches.desc": "Wszystko ze strony Cele, co znaleziono na tym dysku.",
-  "space.folder.desc": "To nie znana pamięć podręczna. Usuń tylko, jeśli wiesz, że nie jest już potrzebna.",
+  "space.folder.desc": "Dane aplikacji lub narzędzia, którego program nie zna. Usuń je tylko, jeśli już z niej nie korzystasz.",
   "space.personal.desc": "Twoje własne pliki. Tylko pokazane, aplikacja ich nie usuwa.",
   "space.small.name": "Mniejsze foldery",
   "space.small.desc": "Foldery poniżej 64 MB każdy.",

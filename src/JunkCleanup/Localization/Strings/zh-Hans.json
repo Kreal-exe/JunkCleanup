@@ -316,7 +316,7 @@
   "risk.Keep.desc": "系统或应用需要，或是你自己的文件。显示出来是为了让你知道空间去向；请通过所属应用删除。",
   "space.caches.name": "JunkCleanup 可清理的缓存",
   "space.caches.desc": "“目标”页面中在此磁盘上找到的全部内容。",
-  "space.folder.desc": "不是已知的缓存。仅在确定不再需要时删除。",
+  "space.folder.desc": "清理工具不认识的应用或工具的数据。仅在不再使用该应用时删除。",
   "space.personal.desc": "你自己的文件。仅在此显示，应用绝不会删除。",
   "space.small.name": "较小的文件夹",
   "space.small.desc": "每个小于 64 MB 的文件夹。",

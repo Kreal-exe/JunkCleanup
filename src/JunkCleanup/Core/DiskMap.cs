@@ -202,8 +202,13 @@ public sealed class DiskMapEngine
                 foreach (var dir in SubFolders(root))
                 {
                     if (claimed.Contains(dir)) continue;
-                    var isPersonal = personal.Contains(Path.GetFileName(dir)) || personal.Contains(dir);
-                    var band = isPersonal ? SpaceSegment.Files : filed.GetValueOrDefault(dir, segment);
+                    // A root filed as Your files (a drive's root, the profile) holds the user's own folders, except those the
+                    // scope files elsewhere and dot folders, which are tools' data.
+                    var isDot = Path.GetFileName(dir).StartsWith('.');
+                    var isPersonal = personal.Contains(Path.GetFileName(dir)) || personal.Contains(dir)
+                        || (segment == SpaceSegment.Files && !isDot && !filed.ContainsKey(dir));
+                    var band = isPersonal ? SpaceSegment.Files
+                        : filed.GetValueOrDefault(dir, segment == SpaceSegment.Files ? SpaceSegment.Other : segment);
                     var entry = Discovered(dir, band, isPersonal, keep, scope);
                     if (containers.Contains(dir))
                         foreach (var sub in SubFolders(dir).Where(s => !claimed.Contains(s)))

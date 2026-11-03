@@ -92,7 +92,7 @@ public static class SpaceCatalog
     {
         Includes = onDrive,
         Rules = Rules,
-        Roots = [(@"%USERPROFILE%", SpaceSegment.Other), (@"%LOCALAPPDATA%", SpaceSegment.Apps), (@"%APPDATA%", SpaceSegment.Apps), (root, SpaceSegment.Files)],
+        Roots = [(@"%USERPROFILE%", SpaceSegment.Files),(@"%LOCALAPPDATA%", SpaceSegment.Apps), (@"%APPDATA%", SpaceSegment.Apps), (root, SpaceSegment.Files)],
         Containers = [],
         Filed = [(@"%USERPROFILE%\AppData", SpaceSegment.Apps), .. filed],
         KeepNames =
