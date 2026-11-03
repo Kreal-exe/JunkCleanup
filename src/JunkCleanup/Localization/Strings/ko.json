@@ -294,6 +294,7 @@
   "disk.title": "디스크",
   "disk.subtitle": "{0} · {2} 중 {1} 사용",
   "disk.subtitle.none": "폴더별로 디스크를 무엇이 채우고 있는지 확인하세요.",
+  "disk.drive": "분석할 드라이브",
   "disk.analyze": "디스크 분석",
   "disk.reanalyze": "다시 분석",
   "disk.analyzing": "모든 폴더를 측정하는 중…",

@@ -30,10 +30,12 @@ public partial class App : Application
         window.DataContext = vm;
         MainWindow = window;
 
-        // Hidden switches used by screenshots/tests: --page <name>, --scan
+        // Hidden switches used by screenshots/tests: --page <name>, --scan, --drive <letter>
         var args = e.Args;
         for (var i = 0; i < args.Length; i++)
         {
+            if (args[i].Equals("--drive", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                vm.Disk.SelectDrive(args[i + 1]);
             if (args[i].Equals("--page", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length &&
                 Enum.TryParse<AppPage>(args[i + 1], true, out var page))
             {

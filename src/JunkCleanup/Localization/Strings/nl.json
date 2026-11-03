@@ -294,6 +294,7 @@
   "disk.title": "Schijf",
   "disk.subtitle": "{0} · {1} van {2} gebruikt",
   "disk.subtitle.none": "Zie wat je schijf vult, map voor map.",
+  "disk.drive": "Te analyseren schijf",
   "disk.analyze": "Schijf analyseren",
   "disk.reanalyze": "Opnieuw analyseren",
   "disk.analyzing": "Elke map wordt gemeten…",

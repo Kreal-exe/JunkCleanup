@@ -294,6 +294,7 @@
   "disk.title": "Disk",
   "disk.subtitle": "{0} · {2} alanın {1} kadarı dolu",
   "disk.subtitle.none": "Diskinizi neyin doldurduğunu klasör klasör görün.",
+  "disk.drive": "Analiz edilecek sürücü",
   "disk.analyze": "Diski analiz et",
   "disk.reanalyze": "Yeniden analiz et",
   "disk.analyzing": "Tüm klasörler ölçülüyor…",

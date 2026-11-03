@@ -294,6 +294,7 @@
   "disk.title": "Диск",
   "disk.subtitle": "{0} · зайнято {1} з {2}",
   "disk.subtitle.none": "Подивіться, чим заповнений диск, тека за текою.",
+  "disk.drive": "Диск для аналізу",
   "disk.analyze": "Аналізувати диск",
   "disk.reanalyze": "Аналізувати знову",
   "disk.analyzing": "Вимірюю всі теки…",

@@ -294,6 +294,7 @@
   "disk.title": "Disk",
   "disk.subtitle": "{0} · {1} terpakai dari {2}",
   "disk.subtitle.none": "Lihat apa yang memenuhi disk Anda, folder demi folder.",
+  "disk.drive": "Drive yang dianalisis",
   "disk.analyze": "Analisis disk",
   "disk.reanalyze": "Analisis lagi",
   "disk.analyzing": "Mengukur setiap folder…",

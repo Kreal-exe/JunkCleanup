@@ -294,6 +294,7 @@
   "disk.title": "Speicher",
   "disk.subtitle": "{0} · {1} von {2} belegt",
   "disk.subtitle.none": "Sieh, was deinen Speicher füllt, Ordner für Ordner.",
+  "disk.drive": "Zu analysierendes Laufwerk",
   "disk.analyze": "Speicher analysieren",
   "disk.reanalyze": "Erneut analysieren",
   "disk.analyzing": "Alle Ordner werden gemessen…",

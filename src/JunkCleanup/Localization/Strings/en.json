@@ -294,6 +294,7 @@
   "disk.title": "Disk",
   "disk.subtitle": "{0} · {1} used of {2}",
   "disk.subtitle.none": "See what fills your disk, folder by folder.",
+  "disk.drive": "Drive to map",
   "disk.analyze": "Analyze disk",
   "disk.reanalyze": "Analyze again",
   "disk.analyzing": "Measuring every folder…",

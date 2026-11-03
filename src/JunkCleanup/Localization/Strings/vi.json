@@ -294,6 +294,7 @@
   "disk.title": "Ổ đĩa",
   "disk.subtitle": "{0} · đã dùng {1} trên {2}",
   "disk.subtitle.none": "Xem thứ gì đang lấp đầy ổ đĩa, từng thư mục một.",
+  "disk.drive": "Ổ đĩa cần phân tích",
   "disk.analyze": "Phân tích ổ đĩa",
   "disk.reanalyze": "Phân tích lại",
   "disk.analyzing": "Đang đo mọi thư mục…",

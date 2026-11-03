@@ -148,6 +148,52 @@ public sealed partial class SpaceItemVm : ObservableObject
     private static string Shorten(string path) => path;
 }
 
+/// <summary>A drive the Disk page can map: its letter, label and free space.</summary>
+public sealed class DriveOption
+{
+    public DriveOption(DriveInfo drive)
+    {
+        Root = drive.RootDirectory.FullName;
+        var label = string.Empty;
+        try { label = drive.VolumeLabel; } catch { /* no label */ }
+        Label = label;
+        try { Free = drive.AvailableFreeSpace; } catch { /* went away */ }
+    }
+
+    public string Root { get; }
+    public string Letter => Root.TrimEnd('\\');
+    public string Label { get; }
+    public long Free { get; }
+    public string Name => Label.Length > 0 ? Letter + "  " + Label : Letter;
+    public string FreeText => LocalizationManager.Instance.Format("disk.free", ByteFormatter.Format(Free));
+
+    /// <summary>Local drives that are ready: fixed disks and USB drives, not optical or network ones.</summary>
+    public static List<DriveOption> All()
+    {
+        var list = new List<DriveOption>();
+        try
+        {
+            foreach (var drive in DriveInfo.GetDrives())
+            {
+                try
+                {
+                    if (drive.DriveType is DriveType.Fixed or DriveType.Removable && drive.IsReady && drive.TotalSize > 0)
+                        list.Add(new DriveOption(drive));
+                }
+                catch
+                {
+                    // a drive that went away
+                }
+            }
+        }
+        catch
+        {
+            // no drive list; the home drive is mapped
+        }
+        return list;
+    }
+}
+
 /// <summary>The Disk page: what fills the disk, band by band and folder by folder, and what can go.</summary>
 public sealed partial class DiskViewModel : ObservableObject
 {
@@ -162,6 +208,8 @@ public sealed partial class DiskViewModel : ObservableObject
     private SpaceReport? _report;
     private DispatcherTimer? _confirmTimer;
     private Func<string> _status;
+    private bool _reanalyze;
+    private bool _refreshingDrives;
 
     public DiskViewModel(Func<bool> useRecycleBin, Func<IReadOnlyList<CleanupTarget>> targets, IDialogService dialogs, Action<string, string> toast)
     {
@@ -179,7 +227,58 @@ public sealed partial class DiskViewModel : ObservableObject
             OnPropertyChanged(nameof(SubtitleText));
             OnPropertyChanged(nameof(AnalyzeText));
             OnPropertyChanged(nameof(FreeText));
+            RefreshDrives();   // the drive list's "… free" text
         };
+        RefreshDrives();
+    }
+
+    /// <summary>The drives to choose from; the picker shows only when there is more than one.</summary>
+    [ObservableProperty] private List<DriveOption> _drives = [];
+    [ObservableProperty] private DriveOption? _selectedDrive;
+    public bool HasDrives => Drives.Count > 1;
+
+    partial void OnDrivesChanged(List<DriveOption> value) => OnPropertyChanged(nameof(HasDrives));
+
+    /// <summary>Picks a drive by letter ("D", "D:", "D:\"); for the hidden --drive switch.</summary>
+    public void SelectDrive(string letter)
+    {
+        var root = letter.TrimEnd('\\', ':') + ":\\";
+        if (Drives.FirstOrDefault(d => d.Root.Equals(root, StringComparison.OrdinalIgnoreCase)) is { } drive) SelectedDrive = drive;
+    }
+
+    /// <summary>Reads the drives again, keeping the one picked if it is still there.</summary>
+    public void RefreshDrives()
+    {
+        var root = SelectedDrive?.Root ?? SpaceCatalog.HomeDrive;
+        var drives = DriveOption.All();
+        // The same drive read again is not a new pick: the picker may clear and restore its selection meanwhile.
+        _refreshingDrives = true;
+        Drives = drives;
+        SelectedDrive = drives.FirstOrDefault(d => d.Root.Equals(root, StringComparison.OrdinalIgnoreCase))
+            ?? drives.FirstOrDefault(d => d.Root.Equals(SpaceCatalog.HomeDrive, StringComparison.OrdinalIgnoreCase))
+            ?? drives.FirstOrDefault();
+        _refreshingDrives = false;
+    }
+
+    partial void OnSelectedDriveChanged(DriveOption? oldValue, DriveOption? newValue)
+    {
+        if (_refreshingDrives || newValue is null || oldValue?.Root == newValue.Root) return;
+        // Another drive: the old map goes, the new one is measured (after the running analysis stops).
+        _report = null;
+        HasReport = false;
+        Items.Clear();
+        Total = Free = 0;
+        foreach (var vm in Segments) vm.Bytes = 0;
+        OnPropertyChanged(nameof(SubtitleText));
+        if (IsAnalyzing)
+        {
+            _reanalyze = true;
+            _cts?.Cancel();
+        }
+        else
+        {
+            _ = Analyze();
+        }
     }
 
     /// <summary>Raised after something was removed, with the bytes freed.</summary>
@@ -251,7 +350,7 @@ public sealed partial class DiskViewModel : ObservableObject
         var progress = new Progress<string>(path => StatusText = Loc.Format("disk.measuring", path));
         try
         {
-            var scope = SpaceCatalog.Scope();
+            var scope = SpaceCatalog.Scope(SelectedDrive?.Root);
             var targets = _targets();
             var report = await Task.Run(() => _engine.AnalyzeAsync(scope, targets, progress, _cts.Token));
             Show(report);
@@ -267,6 +366,11 @@ public sealed partial class DiskViewModel : ObservableObject
             IsAnalyzing = false;
             _cts.Dispose();
             _cts = null;
+            if (_reanalyze)
+            {
+                _reanalyze = false;
+                _ = Analyze();
+            }
         }
     }
 

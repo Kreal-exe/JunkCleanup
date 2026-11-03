@@ -294,6 +294,7 @@
   "disk.title": "Disque",
   "disk.subtitle": "{0} · {1} utilisés sur {2}",
   "disk.subtitle.none": "Voyez ce qui remplit votre disque, dossier par dossier.",
+  "disk.drive": "Lecteur à analyser",
   "disk.analyze": "Analyser le disque",
   "disk.reanalyze": "Analyser à nouveau",
   "disk.analyzing": "Mesure de tous les dossiers…",

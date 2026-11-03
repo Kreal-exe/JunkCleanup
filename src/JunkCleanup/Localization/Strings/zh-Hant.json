@@ -294,6 +294,7 @@
   "disk.title": "磁碟",
   "disk.subtitle": "{0} · 已用 {1}，共 {2}",
   "disk.subtitle.none": "逐個資料夾查看是什麼佔滿了磁碟。",
+  "disk.drive": "要分析的磁碟機",
   "disk.analyze": "分析磁碟",
   "disk.reanalyze": "重新分析",
   "disk.analyzing": "正在測量所有資料夾…",

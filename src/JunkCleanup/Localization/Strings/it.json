@@ -294,6 +294,7 @@
   "disk.title": "Disco",
   "disk.subtitle": "{0} · {1} usati su {2}",
   "disk.subtitle.none": "Scopri cosa riempie il disco, cartella per cartella.",
+  "disk.drive": "Unità da analizzare",
   "disk.analyze": "Analizza disco",
   "disk.reanalyze": "Analizza di nuovo",
   "disk.analyzing": "Misuro tutte le cartelle…",

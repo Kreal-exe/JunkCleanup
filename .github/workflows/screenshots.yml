@@ -48,6 +48,12 @@ jobs:
           ./tools/capture.ps1 -ProcessId $p.Id -Out "shots/disk.png"
           ./tools/capture.ps1 -ProcessId $p.Id -Out "shots/disk-more.png" -Wheel -6
           Stop-Process -Id $p.Id -Force
+          # A second drive (the runner's D:), picked with the drive switch.
+          Start-Sleep -Seconds 2
+          $p = Start-Process publish/sc/JunkCleanup.exe -ArgumentList "--page", "Disk", "--drive", "D" -PassThru
+          Start-Sleep -Seconds 240
+          ./tools/capture.ps1 -ProcessId $p.Id -Out "shots/disk-drive.png"
+          Stop-Process -Id $p.Id -Force
 
       - uses: actions/upload-artifact@v4
         with:

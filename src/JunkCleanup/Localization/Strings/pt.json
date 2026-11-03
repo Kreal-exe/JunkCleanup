@@ -294,6 +294,7 @@
   "disk.title": "Disco",
   "disk.subtitle": "{0} · {1} usados de {2}",
   "disk.subtitle.none": "Veja o que enche o seu disco, pasta a pasta.",
+  "disk.drive": "Unidade a analisar",
   "disk.analyze": "Analisar disco",
   "disk.reanalyze": "Analisar de novo",
   "disk.analyzing": "A medir todas as pastas…",

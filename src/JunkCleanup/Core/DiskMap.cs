@@ -107,6 +107,12 @@ public sealed class SpaceScope
     /// <summary>Path of the volume to report on (the one holding the home folder).</summary>
     public required string VolumePath { get; init; }
 
+    /// <summary>
+    /// Which known items and cache targets belong to the report: on Windows, only those on the drive being mapped, so a
+    /// cache on D: is not counted into C:. Null takes them all.
+    /// </summary>
+    public Func<string, bool>? Includes { get; init; }
+
     /// <summary>Icons in the platform's icon set: a discovered folder, a personal folder, the cleanable caches.</summary>
     public required (string Folder, string Personal, string Caches) Glyphs { get; init; }
 }
@@ -134,6 +140,7 @@ public sealed class DiskMapEngine
         foreach (var rule in scope.Rules)
         {
             var paths = rule.Paths.SelectMany(PathResolver.Expand).Distinct(PathGuard.Comparer)
+                .Where(p => scope.Includes?.Invoke(p) != false)
                 .Where(p => !claimed.Contains(p) && !claimed.Any(c => PathGuard.IsInside(p, [c]))).ToList();
             if (paths.Count == 0) continue;
             foreach (var p in paths) claimed.Add(p);
@@ -167,7 +174,8 @@ public sealed class DiskMapEngine
         var caches = new SpaceEntry { Id = "caches", Segment = SpaceSegment.Caches, Risk = SpaceRisk.Safe, Glyph = scope.Glyphs.Caches, Key = "space.caches" };
         foreach (var target in targets.Where(t => t.Kind == TargetKind.Files))
         {
-            var roots = target.ResolveRoots().Where(r => !claimed.Contains(r) && !claimed.Any(c => PathGuard.IsInside(r, [c]))).ToList();
+            var roots = target.ResolveRoots().Where(r => scope.Includes?.Invoke(r) != false)
+                .Where(r => !claimed.Contains(r) && !claimed.Any(c => PathGuard.IsInside(r, [c]))).ToList();
             if (roots.Count == 0) continue;
             foreach (var r in roots) claimed.Add(r);
             caches.Children.Add(new SpaceEntry

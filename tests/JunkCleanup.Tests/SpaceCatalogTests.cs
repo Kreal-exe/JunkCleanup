@@ -49,4 +49,27 @@ public class SpaceCatalogTests
         var entry = new SpaceEntry { Id = "folder:" + profile, Segment = SpaceSegment.Other, Risk = SpaceRisk.Careful, Glyph = "", Paths = [profile] };
         Assert.False(entry.CanDelete);
     }
+
+    [Fact]
+    public void Another_drive_is_mapped_from_its_root_with_only_what_lives_on_it()
+    {
+        var home = SpaceCatalog.HomeDrive;
+        var other = home.StartsWith("Z", StringComparison.OrdinalIgnoreCase) ? @"Y:\" : @"Z:\";
+        var scope = SpaceCatalog.Scope(other);
+        Assert.Equal(other, scope.VolumePath);
+        Assert.Equal(other, Assert.Single(scope.Roots).Pattern);
+        Assert.False(scope.Includes!(Path.Combine(home, "Users")));
+        Assert.True(scope.Includes!(Path.Combine(other, "Games")));
+        Assert.Contains("$Recycle.Bin", scope.KeepNames);
+    }
+
+    [Fact]
+    public void The_home_drive_keeps_the_profile_scope()
+    {
+        var scope = SpaceCatalog.Scope(SpaceCatalog.HomeDrive);
+        Assert.Equal(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), scope.VolumePath);
+        Assert.True(scope.Includes!(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)));
+        Assert.Equal(scope.Roots, SpaceCatalog.Scope().Roots);
+        Assert.Equal(SpaceCatalog.HomeDrive, scope.Roots[^1].Pattern);
+    }
 }

@@ -294,6 +294,7 @@
   "disk.title": "ディスク",
   "disk.subtitle": "{0} · {2} 中 {1} 使用",
   "disk.subtitle.none": "ディスクを何が埋めているか、フォルダごとに確認します。",
+  "disk.drive": "分析するドライブ",
   "disk.analyze": "ディスクを分析",
   "disk.reanalyze": "再分析",
   "disk.analyzing": "すべてのフォルダを測定中…",

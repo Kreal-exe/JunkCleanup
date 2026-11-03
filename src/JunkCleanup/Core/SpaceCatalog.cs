@@ -52,14 +52,52 @@ public static class SpaceCatalog
         new() { Id = "windows", Segment = SpaceSegment.System, Glyph = GWindows, Paths = [@"%WINDIR%"], Command = "Dism.exe /Online /Cleanup-Image /StartComponentCleanup" },
     ];
 
-    public static SpaceScope Scope() => new()
+    /// <summary>The drive holding the user's profile: the one mapped with the profile, AppData and the known items.</summary>
+    public static string HomeDrive => Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) is { Length: > 0 } root
+        ? root
+        : @"C:\";
+
+    /// <summary>
+    /// What to map on a drive ("D:\"; null is the home drive): the known items and cache targets that live on it and
+    /// every folder at its root. The home drive is also mapped through the profile and AppData.
+    /// </summary>
+    public static SpaceScope Scope(string? drive = null)
     {
+        var root = drive ?? HomeDrive;
+        bool OnDrive(string path) => string.Equals(Path.GetPathRoot(path), root, StringComparison.OrdinalIgnoreCase);
+        (string, SpaceSegment)[] filed =
+        [
+            (Path.Combine(root, "Program Files"), SpaceSegment.Apps), (Path.Combine(root, "Program Files (x86)"), SpaceSegment.Apps),
+            (Path.Combine(root, "WindowsApps"), SpaceSegment.Apps), (Path.Combine(root, "SteamLibrary"), SpaceSegment.Apps),
+            (Path.Combine(root, "$Recycle.Bin"), SpaceSegment.System), (Path.Combine(root, "System Volume Information"), SpaceSegment.System),
+            (Path.Combine(root, "Users"), SpaceSegment.Other),
+        ];
+        // Installed apps, the Recycle Bin, other users and Windows' own folders at a drive's root are shown, never removed here.
+        string[] keep = ["Program Files", "Program Files (x86)", "WindowsApps", "WpSystem", "SteamLibrary", "$Recycle.Bin", "System Volume Information", "Recovery", "$WinREAgent", "PerfLogs", "Users"];
+        if (string.Equals(root, HomeDrive, StringComparison.OrdinalIgnoreCase)) return HomeScope(root, OnDrive, filed, keep);
+        return new()
+        {
+            Rules = Rules,
+            Roots = [(root, SpaceSegment.Files)],
+            Filed = filed,
+            KeepNames = keep,
+            VolumePath = root,
+            Includes = OnDrive,
+            Glyphs = (GFolder, GPersonal, GErase),
+        };
+    }
+
+    // The profile first, so its folders are its own entries; the drive root's other folders after it.
+    private static SpaceScope HomeScope(string root, Func<string, bool> onDrive, (string, SpaceSegment)[] filed, string[] keep) => new()
+    {
+        Includes = onDrive,
         Rules = Rules,
-        Roots = [(@"%USERPROFILE%", SpaceSegment.Other), (@"%LOCALAPPDATA%", SpaceSegment.Apps), (@"%APPDATA%", SpaceSegment.Apps)],
+        Roots = [(@"%USERPROFILE%", SpaceSegment.Other), (@"%LOCALAPPDATA%", SpaceSegment.Apps), (@"%APPDATA%", SpaceSegment.Apps), (root, SpaceSegment.Files)],
         Containers = [],
-        Filed = [(@"%USERPROFILE%\AppData", SpaceSegment.Apps)],
+        Filed = [(@"%USERPROFILE%\AppData", SpaceSegment.Apps), .. filed],
         KeepNames =
         [
+            .. keep,
             "Microsoft", "Packages", "Programs", "Google", "Mozilla", "BraveSoftware", "Vivaldi", "Opera Software", "Yandex",
             "Apple", "Apple Computer", "Comms", "ConnectedDevicesPlatform", "Publishers", "Microsoft Edge", "Thunderbird",
             "Telegram Desktop", "discord", "Slack", "Code", "JetBrains", "AppData", "NTUSER.DAT",

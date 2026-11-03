@@ -138,16 +138,35 @@
 
             <!-- header -->
             <Grid c:Entrance.Delay="0">
-                <StackPanel VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
                     <TextBlock Text="{loc:Str disk.title}" Style="{StaticResource H1}" />
                     <TextBlock Text="{Binding SubtitleText}" Style="{StaticResource Muted}" Margin="0,4,0,0" />
                 </StackPanel>
-                <Button Style="{StaticResource PrimaryButton}" Command="{Binding AnalyzeCommand}" MinWidth="190" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding AnalyzeGlyph}" Style="{StaticResource Glyph}" FontSize="15" Foreground="{DynamicResource Brush.TextOnAccent}" />
-                        <TextBlock Text="{Binding AnalyzeText}" Margin="10,0,0,0" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <!-- which drive to map, when there is more than one -->
+                    <ComboBox Style="{StaticResource Combo}" ItemsSource="{Binding Drives}" SelectedItem="{Binding SelectedDrive}" MinWidth="230" Height="44"
+                              Margin="0,0,12,0" ToolTip="{loc:Str disk.drive}" Visibility="{Binding HasDrives, Converter={StaticResource BoolToVis}}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:DriveOption}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xEDA2;" Style="{StaticResource Glyph}" FontSize="14" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding FreeText}" Style="{StaticResource Muted}" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Style="{StaticResource PrimaryButton}" Command="{Binding AnalyzeCommand}" MinWidth="190">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding AnalyzeGlyph}" Style="{StaticResource Glyph}" FontSize="15" Foreground="{DynamicResource Brush.TextOnAccent}" />
+                            <TextBlock Text="{Binding AnalyzeText}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
             </Grid>
 
             <!-- the whole disk, band by band -->

@@ -294,6 +294,7 @@
   "disk.title": "磁盘",
   "disk.subtitle": "{0} · 已用 {1}，共 {2}",
   "disk.subtitle.none": "逐个文件夹查看是什么占满了磁盘。",
+  "disk.drive": "要分析的驱动器",
   "disk.analyze": "分析磁盘",
   "disk.reanalyze": "重新分析",
   "disk.analyzing": "正在测量所有文件夹…",

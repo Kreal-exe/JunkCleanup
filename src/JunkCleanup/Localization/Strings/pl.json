@@ -294,6 +294,7 @@
   "disk.title": "Dysk",
   "disk.subtitle": "{0} · zajęte {1} z {2}",
   "disk.subtitle.none": "Zobacz, co zapełnia dysk, folder po folderze.",
+  "disk.drive": "Dysk do analizy",
   "disk.analyze": "Analizuj dysk",
   "disk.reanalyze": "Analizuj ponownie",
   "disk.analyzing": "Mierzę wszystkie foldery…",
