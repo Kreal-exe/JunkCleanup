@@ -60,6 +60,10 @@ the Windows app's scan and clean engine and looks the same.
 |:--:|:--:|
 | <img src="docs/light.png" width="440" alt="Light theme"> | <img src="docs/settings.png" width="440" alt="Settings"> |
 
+| Disk map | Pick a drive |
+|:--:|:--:|
+| <img src="docs/disk.png" width="440" alt="Disk page on Windows"> | <img src="docs/disk-drives.png" width="440" alt="Drive picker on the Disk page"> |
+
 ## macOS
 
 <p align="center">
