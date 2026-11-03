@@ -164,16 +164,14 @@ the AppImage. The screenshots above come from that VM. x86-64 is built and teste
 
 Grab the latest build from the [Releases](https://github.com/Kreal-exe/JunkCleanup/releases) page:
 
-- `JunkCleanup-win-x64.zip` — small, needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0).
-- `JunkCleanup-win-x64-selfcontained.zip` — larger, runs anywhere.
-- `JunkCleanup-macOS.zip` — universal (Apple Silicon and Intel), macOS 12 or later.
-- `JunkCleanup-x86_64.AppImage` — Linux, one file: `chmod +x` and run.
-- `JunkCleanup-linux-x64.tar.gz` — Linux, the same app plus `install.sh` (menu entry and icon in `~/.local`).
+- `JunkCleanup-Windows-v<version>.exe` — Windows, one file, no .NET needed.
+- `JunkCleanup-macOS-v<version>.dmg` — universal (Apple Silicon and Intel), macOS 12 or later.
+- `JunkCleanup-Linux-v<version>.AppImage` — Linux x86-64, one file: `chmod +x` and run.
 
-**Windows:** unzip, run `JunkCleanup.exe`. No installer, no services, no telemetry. Settings live in
+**Windows:** run the exe. No installer, no services, no telemetry. Settings live in
 `%AppData%\JunkCleanup\settings.json`. Requires Windows 10 1903 or later; Mica needs Windows 11 22H2+.
 
-**macOS:** unzip and drag `JunkCleanup.app` to *Applications*. The build is not notarized yet, so remove the
+**macOS:** open the disk image and drag `JunkCleanup.app` onto *Applications*. The build is not notarized yet, so remove the
 quarantine flag before the first launch:
 
 ```bash
@@ -183,9 +181,8 @@ xattr -dr com.apple.quarantine /Applications/JunkCleanup.app
 Or open it once from *System Settings → Privacy & Security → Open Anyway*. Settings live in
 `~/Library/Application Support/JunkCleanup/settings.json`.
 
-**Linux:** `chmod +x JunkCleanup-x86_64.AppImage` and run it (on distributions without FUSE 2, run it with
-`APPIMAGE_EXTRACT_AND_RUN=1`). Or unpack the tarball and run `./JunkCleanup/install.sh` (`--uninstall` removes it).
-Self-contained, no .NET needed; it uses the system's ICU (`libicu`), which every desktop distribution ships. Settings
+**Linux:** `chmod +x` the AppImage and run it (on distributions without FUSE 2, run it with
+`APPIMAGE_EXTRACT_AND_RUN=1`). Self-contained, no .NET needed; it uses the system's ICU (`libicu`), which every desktop distribution ships. Settings
 live in `~/.config/JunkCleanup/settings.json`.
 
 ## What it cleans
@@ -262,7 +259,7 @@ PowerShell in the repository root, with the [.NET 10 SDK](https://dot.net):
 ```powershell
 .\build.ps1         # → JunkCleanup.exe on the Desktop and opens it (one self-contained file)
 .\build.ps1 -Test   # run the xunit suite first
-.\build.ps1 -Zip    # also write dist\JunkCleanup-win-x64.zip
+.\build.ps1 -Exe    # also write dist\JunkCleanup-Windows-v<version>.exe
 $env:INSTALL_DIR = "D:\Apps\JunkCleanup"; .\build.ps1   # install somewhere else
 ```
 
@@ -278,7 +275,7 @@ Terminal in the repository root, with only the Xcode Command Line Tools (`xcode-
 ```bash
 ./build.sh           # → /Applications/JunkCleanup.app (universal), quarantine cleared, opened
 ./build.sh --test    # run the core tests first
-./build.sh --zip     # also write dist/JunkCleanup-macOS.zip
+./build.sh --dmg     # also write dist/JunkCleanup-macOS-v<version>.dmg
 INSTALL_DIR=~/Applications ./build.sh   # install somewhere else
 ```
 
@@ -294,9 +291,8 @@ every page (`--capture-clean` also runs the clean) — the macOS screenshots in 
 With the [.NET 10 SDK](https://dot.net), on Linux (or macOS for the tests):
 
 ```bash
-./build-linux.sh                 # → dist/JunkCleanup-linux-x64.tar.gz (self-contained single file)
+./build-linux.sh                 # → dist/JunkCleanup-Linux-v<version>.AppImage (self-contained single file)
 ./build-linux.sh --test          # run the Linux core tests first
-./build-linux.sh --appimage      # also dist/JunkCleanup-x86_64.AppImage
 ./build-linux.sh --arch arm64    # for 64-bit ARM
 ```
 
@@ -306,7 +302,8 @@ against a fake home folder, the freedesktop Trash and scan + clean — on Linux 
 
 ### Releases
 
-Every push to `main` builds and tests all three apps on GitHub Actions and publishes them as release `v<Version>`. While the
+Every push to `main` builds and tests all three apps on GitHub Actions with these same scripts and publishes them as
+release `v<Version>`: the exe, the disk image and the AppImage. While the
 version stays the same, each push replaces that release's files; a new `<Version>` makes a new release.
 
 ## Project layout
@@ -334,7 +331,7 @@ LinuxApp                   the Linux app (C#, Avalonia); Core/Shared links the e
 ├─ Views/          MainWindow, Dashboard, Targets, Settings, About, overlays (.axaml)
 ├─ Themes/         Palette.axaml (the Windows palette per theme), Styles.axaml
 ├─ Resources/      Strings/*.json (Linux wording over the shared translations)
-└─ packaging/      .desktop entry, install.sh
+└─ packaging/      .desktop entry for the AppImage
 tests/JunkCleanup.Linux.Tests   xunit: XDG paths, path guard, catalog, Trash, scan/clean (runs on Linux and macOS)
 ```
 

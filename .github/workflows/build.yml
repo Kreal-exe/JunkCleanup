@@ -28,38 +28,19 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore
-        run: dotnet restore JunkCleanup.slnx
-
-      - name: Build
-        run: dotnet build JunkCleanup.slnx -c Release --no-restore
-
-      - name: Test
-        run: dotnet test JunkCleanup.slnx -c Release --no-build --logger "trx;LogFileName=results.trx"
-
-      - name: Publish (framework-dependent, single file)
-        run: >
-          dotnet publish src/JunkCleanup/JunkCleanup.csproj -c Release -r win-x64
-          --self-contained false -p:PublishSingleFile=true -p:DebugType=none
-          -o publish/fdd
-
-      - name: Publish (self-contained, single file)
-        run: >
-          dotnet publish src/JunkCleanup/JunkCleanup.csproj -c Release -r win-x64
-          --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none
-          -o publish/sc
-
-      - name: Package
+      - name: Test and build (one self-contained exe)
         shell: pwsh
+        env:
+          INSTALL_DIR: ${{ runner.temp }}\JunkCleanup
         run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path publish/fdd/* -DestinationPath dist/JunkCleanup-win-x64.zip
-          Compress-Archive -Path publish/sc/* -DestinationPath dist/JunkCleanup-win-x64-selfcontained.zip
+          ./build.ps1 -Test -Exe
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: JunkCleanup-win-x64
-          path: dist/*.zip
+          name: JunkCleanup-Windows
+          path: dist/*.exe
+          if-no-files-found: error
 
   macos:
     runs-on: macos-15
@@ -70,12 +51,13 @@ jobs:
         env:
           BUILD_NUMBER: ${{ github.run_number }}
           INSTALL_DIR: ${{ runner.temp }}/Applications
-        run: ./build.sh --test --zip
+        run: ./build.sh --test --dmg
 
       - uses: actions/upload-artifact@v4
         with:
           name: JunkCleanup-macOS
-          path: dist/JunkCleanup-macOS.zip
+          path: dist/*.dmg
+          if-no-files-found: error
 
   linux:
     runs-on: ubuntu-24.04
@@ -86,15 +68,14 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Test and build (x64 tar.gz and AppImage)
-        run: ./build-linux.sh --test --appimage
+      - name: Test and build (x64 AppImage)
+        run: ./build-linux.sh --test
 
       - uses: actions/upload-artifact@v4
         with:
-          name: JunkCleanup-linux-x64
-          path: |
-            dist/JunkCleanup-linux-x64.tar.gz
-            dist/JunkCleanup-x86_64.AppImage
+          name: JunkCleanup-Linux
+          path: dist/*.AppImage
+          if-no-files-found: error
 
   release:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -112,6 +93,7 @@ jobs:
         run: |
           VERSION=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/JunkCleanup/JunkCleanup.csproj | head -1)
           TAG="v$VERSION"
+          sed "s/<version>/$VERSION/g" .github/release-notes.md > notes.md
           if gh release view "$TAG" >/dev/null 2>&1; then
             # The same version again: the tag moves to this commit and the files are replaced.
             git tag -f "$TAG" "$GITHUB_SHA"
@@ -121,10 +103,10 @@ jobs:
             for asset in $(gh release view "$TAG" --json assets -q '.assets[].name'); do
               [ -e "dist/$asset" ] || gh release delete-asset "$TAG" "$asset" --yes
             done
-            gh release edit "$TAG" --title "JunkCleanup $TAG" --notes-file .github/release-notes.md
+            gh release edit "$TAG" --title "JunkCleanup $TAG" --notes-file notes.md
           else
             gh release create "$TAG" dist/* \
               --target "$GITHUB_SHA" \
               --title "JunkCleanup $TAG" \
-              --notes-file .github/release-notes.md
+              --notes-file notes.md
           fi

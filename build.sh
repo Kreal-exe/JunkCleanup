@@ -4,7 +4,7 @@
 #
 #   ./build.sh           build, install into /Applications and open the app
 #   ./build.sh --test    run the core tests first (formatter, path guard, catalog, scan & clean)
-#   ./build.sh --zip     also write dist/JunkCleanup-macOS.zip for a release
+#   ./build.sh --dmg     also write dist/JunkCleanup-macOS-v<version>.dmg for a release
 #
 # INSTALL_DIR=~/Applications ./build.sh installs somewhere else. Only the Xcode Command Line Tools are needed.
 # The version is the <Version> of src/JunkCleanup/JunkCleanup.csproj, shared with the Windows app.
@@ -16,11 +16,11 @@ BUNDLE_ID="io.github.kreal-exe.JunkCleanup"
 VERSION="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$ROOT/src/JunkCleanup/JunkCleanup.csproj" | head -1)"
 DEST="${INSTALL_DIR:-/Applications}"
 TEST=0
-ZIP=0
+DMG=0
 for arg in "$@"; do
   case "$arg" in
     --test) TEST=1 ;;
-    --zip)  ZIP=1 ;;
+    --dmg)  DMG=1 ;;
     *) sed -n '2,9p' "$0"; exit 1 ;;
   esac
 done
@@ -63,16 +63,20 @@ for json in "$MAC"/Resources/Strings/*.json; do mkdir -p "$APP/Contents/Resource
 # Files copied out of iCloud Drive keep its attributes, which codesign refuses.
 xattr -cr "$APP"
 
-# Ad-hoc signature: required on Apple Silicon, and keeps the bundle intact in a zip.
+# Ad-hoc signature: required on Apple Silicon, and keeps the bundle intact in the disk image.
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1
 codesign --verify --strict "$APP"
 
-if [ "$ZIP" = 1 ]; then
-  mkdir -p "$ROOT/dist"
-  ZIPFILE="$ROOT/dist/$NAME-macOS.zip"
-  rm -f "$ZIPFILE"
-  ditto -c -k --norsrc --keepParent "$APP" "$ZIPFILE"
-  echo "Release zip: $ZIPFILE"
+if [ "$DMG" = 1 ]; then
+  # The app next to a link to Applications: open the image, drag one onto the other.
+  STAGE="$OUT/dmg"
+  mkdir -p "$STAGE" "$ROOT/dist"
+  ditto "$APP" "$STAGE/$NAME.app"
+  ln -s /Applications "$STAGE/Applications"
+  DMGFILE="$ROOT/dist/$NAME-macOS-v$VERSION.dmg"
+  rm -f "$DMGFILE"
+  hdiutil create -volname "$NAME" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMGFILE" >/dev/null
+  echo "Release disk image: $DMGFILE"
 fi
 
 # Quit a running copy first; if it refuses (a clean in progress), leave the installed version alone.
