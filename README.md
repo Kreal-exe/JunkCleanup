@@ -171,8 +171,9 @@ Grab the latest build from the [Releases](https://github.com/Kreal-exe/JunkClean
 **Windows:** run the exe. No installer, no services, no telemetry. Settings live in
 `%AppData%\JunkCleanup\settings.json`. Requires Windows 10 1903 or later; Mica needs Windows 11 22H2+.
 
-**macOS:** open the disk image and drag `JunkCleanup.app` onto *Applications*. The build is not notarized yet, so remove the
-quarantine flag before the first launch:
+**macOS:** open the disk image and drag `JunkCleanup.app` onto *Applications*. The build is not notarized yet, so before
+the first launch run **Allow JunkCleanup to open.command** from the disk image (right-click → *Open* the first time): it
+copies the app to Applications if needed, clears the quarantine flag and opens it. Or by hand:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/JunkCleanup.app

@@ -2,7 +2,8 @@
 Windows 10 1903 or later. The app is not signed yet: if SmartScreen stops it, choose **More info → Run anyway**.
 
 **macOS.** Open `JunkCleanup-macOS-v<version>.dmg` and drag `JunkCleanup.app` onto *Applications*. The build is not
-notarized yet, so remove the quarantine flag before the first launch:
+notarized yet, so before the first launch run **Allow JunkCleanup to open.command** from the disk image (right-click →
+*Open* the first time): it copies the app to Applications if needed, clears the quarantine flag and opens it. Or by hand:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/JunkCleanup.app
@@ -20,7 +21,9 @@ needed; x86-64, any desktop (GNOME, KDE, Xfce…). `JunkCleanup --scan` lists wh
 **«Подробнее» → «Выполнить в любом случае»**.
 
 **macOS.** Откройте `JunkCleanup-macOS-v<version>.dmg` и перетащите `JunkCleanup.app` в «Программы». Сборка пока не
-нотаризована, поэтому перед первым запуском снимите карантинную пометку:
+нотаризована, поэтому перед первым запуском запустите из образа **Allow JunkCleanup to open.command** (в первый раз —
+правый клик → «Открыть»): он скопирует приложение в «Программы», если его там нет, снимет карантин и откроет его.
+Или вручную:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/JunkCleanup.app
