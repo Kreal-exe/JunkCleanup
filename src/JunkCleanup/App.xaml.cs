@@ -45,7 +45,10 @@ public partial class App : Application
 
         window.Show();
 
-        if (Settings.ScanOnStartup || args.Any(a => a.Equals("--scan", StringComparison.OrdinalIgnoreCase)))
+        // --clean: relaunched as administrator to finish a clean the user already confirmed.
+        if (args.Any(a => a.Equals("--clean", StringComparison.OrdinalIgnoreCase)))
+            _ = vm.ScanAndCleanAsync();
+        else if (Settings.ScanOnStartup || args.Any(a => a.Equals("--scan", StringComparison.OrdinalIgnoreCase)))
             _ = vm.ScanAsync();
     }
 

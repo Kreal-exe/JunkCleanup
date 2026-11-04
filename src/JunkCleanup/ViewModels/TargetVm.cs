@@ -166,6 +166,7 @@ public sealed partial class TargetVm : ObservableObject
 
     public void Apply(TargetScanResult result)
     {
+        HasLeftovers = false;
         LastResult = result;
         Roots = result.Target.Kind == TargetKind.Files ? result.Roots : Roots;
         Bytes = result.TotalBytes;
@@ -194,8 +195,12 @@ public sealed partial class TargetVm : ObservableObject
         OnPropertyChanged(nameof(HasEntries));
     }
 
+    /// <summary>A clean left files behind (in use, or needing administrator): only a new scan offers them again.</summary>
+    public bool HasLeftovers { get; private set; }
+
     public void ApplyClean(TargetCleanResult clean)
     {
+        HasLeftovers = clean.BytesRemaining > 0;
         Bytes = clean.BytesRemaining;
         FileCount = clean.FilesRemaining;
         TopEntries.Clear();

@@ -6,6 +6,12 @@ public sealed class CleanOptions
 {
     public bool UseRecycleBin { get; init; } = true;
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// Marks a file that could not be deleted (held open by an app) for removal at the next restart; true when it
+    /// was marked. Null when the platform or the rights do not allow it (on Windows it takes administrator).
+    /// </summary>
+    public Func<string, bool>? ScheduleAtRestart { get; init; }
 }
 
 public sealed record CleanProgress(
@@ -26,6 +32,9 @@ public sealed class TargetCleanResult
     public int FilesDeleted { get; set; }
     public int Failed { get; set; }
 
+    /// <summary>Of the failed files, those marked for removal at the next restart.</summary>
+    public int AtRestart { get; set; }
+
     /// <summary>Files still on disk afterwards: the ones that failed plus any left when the clean was stopped.</summary>
     public int FilesRemaining { get; set; }
 
@@ -37,6 +46,7 @@ public sealed class CleanReport
     public long BytesFreed { get; set; }
     public int FilesDeleted { get; set; }
     public int Failed { get; set; }
+    public int AtRestart { get; set; }
     public bool Cancelled { get; set; }
     public TimeSpan Elapsed { get; set; }
     public Dictionary<string, TargetCleanResult> Targets { get; } = new(StringComparer.Ordinal);
@@ -103,6 +113,7 @@ public sealed class CleanEngine
                 report.BytesFreed += result.BytesFreed;
                 report.FilesDeleted += result.FilesDeleted;
                 report.Failed += result.Failed;
+                report.AtRestart += result.AtRestart;
                 report.Targets[scan.Target.Id] = result;
             }
             Publish(scan.Target.Id, true, result);
@@ -121,10 +132,12 @@ public sealed class CleanEngine
         {
             if (scan.Target.Kind == TargetKind.RecycleBin)
             {
+                // What is in it now: more than scanned when files were moved there since.
+                var (binBytes, binItems) = options.DryRun ? (scan.TotalBytes, scan.FileCount) : RecycleBinNative.Query();
                 if (options.DryRun || RecycleBinNative.Empty())
                 {
-                    result.BytesFreed = scan.TotalBytes;
-                    result.FilesDeleted = scan.FileCount;
+                    result.BytesFreed = Math.Max(binBytes, scan.TotalBytes);
+                    result.FilesDeleted = (int)Math.Max(binItems, scan.FileCount);
                 }
                 else
                 {
@@ -149,7 +162,7 @@ public sealed class CleanEngine
             }
 
             long freed = 0;
-            int deleted = 0, failed = result.Failed;
+            int deleted = 0, failed = result.Failed, atRestart = 0;
             var reportGate = new object();
             var lastReport = Stopwatch.StartNew();
             void Report()
@@ -190,9 +203,15 @@ public sealed class CleanEngine
                     if (ct.IsCancellationRequested) break;
                     RecycleBinNative.MoveToRecycleBin(batch.Select(f => f.Path).ToList());
 
-                    // The shell does not tell us which files it skipped, so verify each one.
+                    // The shell stops a batch at the first file it cannot move (one held open by an app), leaving every
+                    // file after it in place; those go one by one, so only the files that are really in use stay.
                     foreach (var file in batch)
                     {
+                        if (File.Exists(file.Path))
+                        {
+                            if (ct.IsCancellationRequested) { failed++; continue; }
+                            RecycleBinNative.MoveToRecycleBin([file.Path]);
+                        }
                         if (File.Exists(file.Path))
                         {
                             failed++;
@@ -226,6 +245,7 @@ public sealed class CleanEngine
                     else
                     {
                         Interlocked.Increment(ref failed);
+                        if (options.ScheduleAtRestart?.Invoke(file.Path) == true) Interlocked.Increment(ref atRestart);
                     }
 
                     Report();
@@ -235,6 +255,7 @@ public sealed class CleanEngine
             result.BytesFreed = freed;
             result.FilesDeleted = deleted;
             result.Failed = failed;
+            result.AtRestart = atRestart;
 
             foreach (var root in roots)
             {

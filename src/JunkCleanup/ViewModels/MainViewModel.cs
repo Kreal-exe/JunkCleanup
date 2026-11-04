@@ -100,7 +100,9 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         Insights.Clear();
-        foreach (var insight in found) Insights.Add(insight);
+        // The bin's hint says to turn its target on; with the target on, the dashboard already offers to empty it.
+        var binOn = Targets.Any(t => t.IsRecycleBin && t.IsEnabled);
+        foreach (var insight in found.Where(i => !(binOn && i.Id == "recyclebin"))) Insights.Add(insight);
         OnPropertyChanged(nameof(HasInsights));
     }
 
@@ -194,7 +196,7 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private int _cleanFailed;
     [ObservableProperty] private string _cleanSummary = string.Empty;
 
-    public bool CanClean => HasResults && !IsScanning && !IsCleaning && SelectedBytes > 0;
+    public bool CanClean => HasResults && !IsScanning && !IsCleaning && Selectable().Any();
     public bool CanStopClean => IsCleaning && !IsStoppingClean;
     public string DetailsSubtitle => DetailsTarget is { } t
         ? ByteFormatter.Format(t.Bytes) + " · " + Loc.Format("dash.filesCount", ByteFormatter.FormatCount(t.FileCount))
@@ -209,9 +211,43 @@ public sealed partial class MainViewModel : ObservableObject
 
     public string ScanButtonText => IsScanning ? Loc["dash.stop"] : HasResults ? Loc["dash.rescan"] : Loc["dash.scan"];
     public string ScanButtonGlyph => IsScanning ? "" : "";
-    public string CleanButtonText => SelectedBytes > 0 ? Loc.Format("dash.clean", ByteFormatter.Format(SelectedBytes)) : Loc["dash.cleanEmpty"];
-    public string DeleteModeText => _settings.UseRecycleBin ? Loc["dash.modeRecycle"] : Loc["dash.modePermanent"];
-    public string DeleteModeGlyph => _settings.UseRecycleBin ? "" : "";
+    public string CleanButtonText => !Selectable().Any() ? Loc["dash.cleanEmpty"]
+        : OnlyBinLeft ? Loc.Format("dash.emptyBin", ByteFormatter.Format(Selectable().Sum(t => t.Bytes)))
+        : Loc.Format("dash.clean", ByteFormatter.Format(Selectable().Sum(t => t.Bytes)));
+
+    /// <summary>
+    /// Selected targets with something in them. What a clean could not remove (files in use, places that need
+    /// administrator) is left out until the next scan: pressing Clean again would not remove it either.
+    /// </summary>
+    private IEnumerable<TargetVm> Selectable() => Targets.Where(t => t.IsPresent && t.IsEnabled && t.LastResult is not null && t.Bytes > 0 && !t.HasLeftovers);
+
+    /// <summary>What is in the Recycle Bin when its target is on; shown on its own line, not as junk.</summary>
+    [ObservableProperty] private long _binBytes;
+    /// <summary>The ring shows the Recycle Bin: nothing else is left to clean.</summary>
+    [ObservableProperty] private bool _isOnlyBin;
+    public bool HasBin => BinBytes > 0 && !IsOnlyBin;
+    private TargetVm? _bin;
+    /// <summary>With its target on, the bin is emptied with the rest; with it off, how to include it.</summary>
+    public string BinText => _bin is { IsEnabled: true }
+        ? _bin.Name + ": " + ByteFormatter.Format(BinBytes)
+        : Loc.Format("dash.binLine", ByteFormatter.Format(BinBytes));
+    /// <summary>Under the ring: what it shows, the share of the whole disk that a press of Clean frees.</summary>
+    public string RingCaption => IsScanning || DiskTotal <= 0 || DisplayBytes <= 0 ? Loc["dash.reclaimable"]
+        : Loc.Format("dash.ofDisk", DiskPercent(DisplayBytes), ByteFormatter.Format(DiskTotal))
+          + (IsOnlyBin ? " · " + Loc["dash.inBin"] : string.Empty);
+
+    private string DiskPercent(long bytes)
+    {
+        var percent = DiskTotal > 0 ? 100.0 * bytes / DiskTotal : 0;
+        return (percent is > 0 and < 0.1 ? "<0.1" : percent < 10 ? percent.ToString("0.0") : percent.ToString("0")) + "%";
+    }
+    partial void OnBinBytesChanged(long value) { OnPropertyChanged(nameof(HasBin)); OnPropertyChanged(nameof(BinText)); }
+    partial void OnIsOnlyBinChanged(bool value) { OnPropertyChanged(nameof(HasBin)); OnPropertyChanged(nameof(RingCaption)); }
+
+    /// <summary>All that is left to clean is the Recycle Bin: the button empties it.</summary>
+    private bool OnlyBinLeft => Selectable().Any() && Selectable().All(t => t.IsRecycleBin);
+    public string DeleteModeText => Loc["dash.modeCaches"];
+    public string DeleteModeGlyph => "";
     public string TargetsSubtitle => Loc.Format("targets.subtitle", PresentCount, SelectedCount, ByteFormatter.Format(SelectedBytes));
     public bool IsTargetsViewEmpty => TargetsView.IsEmpty;
     public string SettingsFolder => SettingsStore.Directory;
@@ -364,23 +400,39 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>Set by --clean (the relaunch as administrator): the user already confirmed this clean.</summary>
+    private bool _autoConfirm;
+
+    /// <summary>The relaunch as administrator: scan, then finish the clean the user started without the rights.</summary>
+    public async Task ScanAndCleanAsync()
+    {
+        await ScanAsync();
+        _autoConfirm = true;
+        await CleanAsync();
+    }
+
     [RelayCommand]
     private async Task CleanAsync()
     {
         if (IsScanning || IsCleaning) return;
 
-        var selected = Targets.Where(t => t.IsEnabled && t.LastResult is not null && t.Bytes > 0).ToList();
+        var selected = Selectable().ToList();
         if (selected.Count == 0) return;
 
+        // Caches and temporary files are deleted for good, like every cleaner does: apps rebuild them, and in the
+        // Recycle Bin they would free nothing. The Recycle Bin setting is for what is removed by hand.
+        var emptyingBin = selected.All(t => t.IsRecycleBin);
         var bytes = selected.Sum(t => t.Bytes);
         var files = selected.Sum(t => (long)t.FileCount);
-        var recycle = _settings.UseRecycleBin;
 
-        var ok = !_settings.ConfirmClean || await _dialogs.ConfirmAsync(
-            Loc.Format("clean.confirmTitle", ByteFormatter.Format(bytes)),
-            Loc.Format(recycle ? "clean.confirmRecycle" : "clean.confirmPermanent", ByteFormatter.FormatCount(files), selected.Count),
-            Loc["clean.confirm"],
-            danger: !recycle);
+        var ok = _autoConfirm || !_settings.ConfirmClean || await _dialogs.ConfirmAsync(
+            Loc.Format(emptyingBin ? "clean.binTitle" : "clean.confirmTitle", ByteFormatter.Format(bytes)),
+            emptyingBin
+                ? Loc.Format("clean.binBody", ByteFormatter.FormatCount(files))
+                : Loc.Format("clean.confirmPermanent", ByteFormatter.FormatCount(files), selected.Count),
+            Loc[emptyingBin ? "clean.binConfirm" : "clean.confirm"],
+            danger: emptyingBin);
+        _autoConfirm = false;
         if (!ok) return;
 
         IsCleaning = true;
@@ -420,7 +472,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             report = await _cleaner.CleanAsync(
                 selected.Select(t => t.LastResult!).ToList(),
-                new CleanOptions { UseRecycleBin = recycle },
+                new CleanOptions { UseRecycleBin = false, ScheduleAtRestart = Elevation.DeleteAtRestart },
                 progress,
                 _cleanCts.Token);
         }
@@ -439,6 +491,8 @@ public sealed partial class MainViewModel : ObservableObject
         {
             CleanSummary = report.Cancelled
                 ? Loc.Format("clean.stopped", ByteFormatter.FormatCount(report.FilesDeleted))
+                : report.AtRestart > 0
+                ? Loc.Format("clean.summaryRestart", ByteFormatter.FormatCount(report.FilesDeleted), ByteFormatter.FormatCount(report.AtRestart))
                 : report.Failed > 0
                 ? Loc.Format("clean.summary", ByteFormatter.FormatCount(report.FilesDeleted), ByteFormatter.FormatCount(report.Failed))
                 : Loc.Format("clean.summaryOk", ByteFormatter.FormatCount(report.FilesDeleted), sw.Elapsed.TotalSeconds.ToString("0.0"));
@@ -458,6 +512,22 @@ public sealed partial class MainViewModel : ObservableObject
         SetStatus(() => Loc.Format("dash.cleaned", ByteFormatter.Format(freed)));
         // The disk changed: measure it again in the background.
         if (_settings.MeasureDiskWithScan && !Disk.IsAnalyzing) _ = Disk.Analyze();
+
+        // What stayed because Windows keeps it from ordinary apps: offer to come back as administrator and finish.
+        if (!Elevation.IsElevated)
+        {
+            var denied = selected.Where(t => t.HasLeftovers && (t.RequiresAdmin || t.LastResult?.AccessDenied == true)).ToList();
+            var deniedBytes = denied.Sum(t => t.Bytes);
+            if (deniedBytes > 0 && await _dialogs.ConfirmAsync(
+                    Loc["clean.adminTitle"],
+                    Loc.Format("clean.adminBody", ByteFormatter.Format(deniedBytes), denied.Count),
+                    Loc["titlebar.runAsAdmin"],
+                    danger: false)
+                && Elevation.RestartElevated("--clean"))
+            {
+                System.Windows.Application.Current.Shutdown();
+            }
+        }
     }
 
     /// <summary>Stops a running clean; files already removed stay removed, the rest are left alone.</summary>
@@ -642,10 +712,21 @@ public sealed partial class MainViewModel : ObservableObject
         SelectedCount = selected.Count;
         PresentCount = present.Count;
 
-        foreach (var c in Categories) c.Recalc(FoundBytes);
+        // The ring and its number are what a press of Clean frees now (files in use or needing administrator are left
+        // out until a scan). The Recycle Bin is not junk of any category: its share is shown on its own line.
+        var bin = present.FirstOrDefault(t => t.IsRecycleBin);
+        _bin = bin;
+        BinBytes = bin?.Bytes ?? 0;
+        foreach (var c in Categories) c.Recalc(present.Where(t => !t.IsRecycleBin).Sum(t => t.Bytes));
 
-        DisplayBytes = IsScanning ? SelectedLiveBytes() : SelectedBytes;
-        RingAngle = FoundBytes > 0 ? 360.0 * SelectedBytes / FoundBytes : 0;
+        IsOnlyBin = !IsScanning && OnlyBinLeft;
+        DisplayBytes = IsScanning ? SelectedLiveBytes() : Selectable().Sum(t => t.Bytes);
+        OnPropertyChanged(nameof(BinText));
+        OnPropertyChanged(nameof(CleanButtonText));   // "Empty Recycle Bin" once only the bin is left
+        OnPropertyChanged(nameof(CanClean));
+        // The ring is the share of the whole disk; a sliver stays visible however small the share.
+        RingAngle = DiskTotal > 0 && DisplayBytes > 0 ? Math.Max(4, 360.0 * DisplayBytes / DiskTotal) : 0;
+        OnPropertyChanged(nameof(RingCaption));
 
         var max = present.Count > 0 ? present.Max(t => t.Bytes) : 0;
         foreach (var t in present) t.Share = max > 0 ? (double)t.Bytes / max : 0;

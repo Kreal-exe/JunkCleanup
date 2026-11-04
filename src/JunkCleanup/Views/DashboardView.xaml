@@ -43,7 +43,7 @@
                                            FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextMuted}"
                                            VerticalAlignment="Bottom" Margin="6,0,0,9" />
                             </StackPanel>
-                            <TextBlock Text="{loc:Str dash.reclaimable}" Style="{StaticResource Caption}" HorizontalAlignment="Center"
+                            <TextBlock Text="{Binding RingCaption}" Style="{StaticResource Caption}" HorizontalAlignment="Center"
                                        Visibility="{Binding IsScanning, Converter={StaticResource BoolToVisInverse}}" />
                             <TextBlock Text="{loc:Str dash.foundSoFar}" Style="{StaticResource Caption}" HorizontalAlignment="Center"
                                        Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}" />
@@ -75,6 +75,12 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+
+                        <!-- the Recycle Bin: on its own line, it is not junk of any category -->
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0" Visibility="{Binding HasBin, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="&#xE74D;" Style="{StaticResource Glyph}" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding BinText}" Style="{StaticResource Muted}" FontSize="12.5" Margin="7,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- actions -->

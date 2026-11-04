@@ -67,7 +67,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     public bool HasCustomFolders => CustomFolders.Count > 0;
 
     public string DeleteModeLabel => Loc[UseRecycleBin ? "settings.deleteMode.recycle" : "settings.deleteMode.permanent"];
-    public string DeleteModeDescription => Loc[UseRecycleBin ? "settings.deleteMode.recycle.desc" : "settings.deleteMode.permanent.desc"];
+    public string DeleteModeDescription => Loc[UseRecycleBin ? "settings.deleteMode.recycle.descWin" : "settings.deleteMode.permanent.descWin"];
     public string Hours6 => Loc.Format("settings.hours", 6);
     public string Hours24 => Loc.Format("settings.hours", 24);
     public string Days3 => Loc.Format("settings.days", 3);

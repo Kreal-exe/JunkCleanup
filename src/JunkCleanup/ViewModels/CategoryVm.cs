@@ -64,7 +64,8 @@ public sealed partial class CategoryVm : ObservableObject
 
     public void Recalc(long grandTotal)
     {
-        var present = Targets.Where(t => t.IsPresent).ToList();
+        // The Recycle Bin is shown on its own line of the dashboard, not as junk of its category.
+        var present = Targets.Where(t => t.IsPresent && !t.IsRecycleBin).ToList();
         Bytes = present.Sum(t => t.Bytes);
         SelectedBytes = present.Where(t => t.IsEnabled).Sum(t => t.Bytes);
         FileCount = present.Sum(t => (long)t.FileCount);

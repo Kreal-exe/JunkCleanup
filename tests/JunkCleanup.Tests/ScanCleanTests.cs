@@ -183,6 +183,40 @@ public class ScanCleanTests : IDisposable
         Assert.True(File.Exists(_outside));
     }
 
+    [Fact]
+    public void Recycling_moves_every_file_but_the_one_held_open()
+    {
+        // Many files in one folder, the third held open: the shell stops a batch at it, the rest must still go.
+        var dir = Path.Combine(_root, "many");
+        Directory.CreateDirectory(dir);
+        for (var i = 0; i < 40; i++) File.WriteAllBytes(Path.Combine(dir, $"f{i:00}.bin"), new byte[100]);
+        var scan = new ScanEngine().ScanTarget(Target(), new ScanOptions(), null, CancellationToken.None);
+
+        TargetCleanResult clean;
+        using (File.Open(Path.Combine(dir, "f02.bin"), FileMode.Open, FileAccess.Read, FileShare.None))
+            clean = new CleanEngine().CleanTarget(scan, new CleanOptions { UseRecycleBin = true }, null, CancellationToken.None);
+
+        Assert.Equal(1, clean.Failed);
+        Assert.Equal(43, clean.FilesDeleted);
+        Assert.Equal(["f02.bin"], Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void A_file_in_use_is_marked_for_the_next_restart()
+    {
+        var scan = new ScanEngine().ScanTarget(Target(), new ScanOptions(), null, CancellationToken.None);
+        var marked = new List<string>();
+
+        TargetCleanResult clean;
+        using (File.Open(Path.Combine(_root, "a", "one.bin"), FileMode.Open, FileAccess.Read, FileShare.None))
+            clean = new CleanEngine().CleanTarget(scan, new CleanOptions { UseRecycleBin = false, ScheduleAtRestart = p => { lock (marked) marked.Add(p); return true; } },
+                null, CancellationToken.None);
+
+        Assert.Equal(1, clean.Failed);
+        Assert.Equal(1, clean.AtRestart);
+        Assert.Equal([Path.Combine(_root, "a", "one.bin")], marked);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, true); } catch { /* best effort */ }
