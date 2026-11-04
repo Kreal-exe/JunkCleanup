@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "Кеш компонентів і розширень.",
   "target.dev.playwright.name": "Браузери Playwright",
   "target.dev.playwright.desc": "Бінарні файли браузерів, завантажені Playwright.",
+  "target.dev.projects.name": "Збірки старих проєктів",
+  "target.dev.projects.desc": "node_modules, target, .venv, build тощо в проєктах, які не змінювалися 30 днів. npm install, cargo build або pip повернуть їх.",
   "target.dev.huggingface.name": "Хаб Hugging Face",
   "target.dev.huggingface.desc": "Завантажені моделі й набори даних. Можуть займати дуже багато місця.",
   "target.dev.android.name": "Кеш збірки Android",

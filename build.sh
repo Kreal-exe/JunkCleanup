@@ -39,7 +39,7 @@ if [ "$TEST" = 1 ]; then
   echo "Running the core tests..."
   # The non-UI core only: it needs no window server.
   "$CLANG" "${CFLAGS[@]}" -I"$MAC/Sources" -framework Foundation \
-    "$MAC/Sources/CCCore.m" "$MAC/Sources/CCEngine.m" "$MAC/Sources/CCSettings.m" "$MAC/Sources/CCInsights.m" \
+    "$MAC/Sources/CCCore.m" "$MAC/Sources/CCEngine.m" "$MAC/Sources/CCSettings.m" "$MAC/Sources/CCInsights.m" "$MAC/Sources/CCProcesses.m" \
     "$MAC/Tests/CoreTests.m" -o "$OUT/core-tests"
   JUNKCLEANUP_STRINGS="$ROOT/src/JunkCleanup/Localization/Strings:$MAC/Resources/Strings" "$OUT/core-tests"
 fi

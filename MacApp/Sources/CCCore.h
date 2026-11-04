@@ -16,6 +16,16 @@ typedef NS_ENUM(NSInteger, CCCategory) {
 
 typedef NS_ENUM(NSInteger, CCRisk) { CCRiskSafe, CCRiskModerate, CCRiskCareful };
 
+/// How the cleaner picks what to clean: by itself from the risk levels, or by hand.
+typedef NS_ENUM(NSInteger, CCSelectionMode) {
+    /// Every Safe target (caches that come back by themselves).
+    CCSelectionSafe,
+    /// Safe and Moderate targets; Careful ones (models, backups, archives) are never picked by the app.
+    CCSelectionModerate,
+    /// What the user ticked.
+    CCSelectionManual,
+};
+
 /// "System", "Browsers"… — the suffix of the localization keys "cat.*" and of the category colours.
 NSString *CCCategoryName(CCCategory category);
 /// "Safe", "Moderate", "Careful" — the suffix of the "risk.*" keys.
@@ -62,6 +72,20 @@ NSString *CCFormatDecimal(double value);
 @property (nonatomic) BOOL fallback;
 /// The roots are versions of one thing (an app's bundled runtimes): the newest one is in use and left alone.
 @property (nonatomic) BOOL keepsNewest;
+/// Finds the roots itself instead of expanding rootPatterns (old projects' build folders).
+@property (nonatomic, copy, nullable) NSArray<NSString *> * (^finder)(void);
+/// A root is itself the junk (a project's node_modules): once emptied it is removed too.
+@property (nonatomic) BOOL removesRoots;
+/// A root is offered only when nothing inside it changed for this many days (temp folders of finished sessions).
+@property (nonatomic) double idleDays;
+/// Each root is junk as a whole (an abandoned copy of an app, a VM image, a finished session's folder): a clean removes
+/// it in one go, links and all, instead of file by file.
+@property (nonatomic) BOOL deletesWholeRoots;
+/// The files are APFS clones of another app's files: the scan counts only the blocks they do not share, which is
+/// what removing them frees today.
+@property (nonatomic) BOOL sharesBlocks;
+/// Runs on the cleaning thread right before the roots are removed (stops the VM that has its image open).
+@property (nonatomic, copy, nullable) void (^beforeClean)(NSArray<NSString *> *roots);
 /// Display name override (custom folders); nil means the localized key.
 @property (nonatomic, copy, nullable) NSString *displayName;
 
@@ -69,9 +93,22 @@ NSString *CCFormatDecimal(double value);
 @property (nonatomic, readonly) NSString *descriptionKey;
 @property (nonatomic, readonly) BOOL isCustom;
 
-/// Existing, allowed, de-duplicated root directories (symlinks resolved).
+/// Existing, allowed, de-duplicated root directories (symlinks resolved). Slow finders are answered from a cache of a
+/// few seconds.
 - (NSArray<NSString *> *)resolveRoots;
+/// The same, worked out again now: what a clean checks right before it removes a root whole.
+- (NSArray<NSString *> *)freshRoots;
 @end
+
+/// Whether the app ticks this target by itself in the given mode: custom folders always, the Trash never, otherwise the
+/// targets on by default whose risk the mode covers. Manual mode picks nothing by itself.
+BOOL CCAutoSelects(CCTarget *target, CCSelectionMode mode);
+/// "safe", "moderate", "manual" — how the settings file stores the mode.
+NSString *CCSelectionModeName(CCSelectionMode mode);
+CCSelectionMode CCSelectionModeFromName(NSString *_Nullable name);
+
+/// Something inside the folder (or the file itself) was modified within the last `seconds`. Stops at the first hit.
+BOOL CCTouchedWithin(NSString *path, NSTimeInterval seconds);
 
 @interface CCCatalog : NSObject
 + (NSArray<CCTarget *> *)allTargets;

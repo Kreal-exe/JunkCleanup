@@ -42,6 +42,12 @@ public sealed class CleanupTarget
     /// <summary>The roots are versions of one thing (an app's bundled runtimes): the newest one is in use and left alone.</summary>
     public bool KeepNewest { get; init; }
 
+    /// <summary>Finds the roots itself instead of expanding <see cref="RootPatterns"/> (old projects' build folders).</summary>
+    public Func<IReadOnlyList<string>>? Finder { get; init; }
+
+    /// <summary>A root is itself the junk (a project's node_modules): once emptied it is removed too.</summary>
+    public bool RemovesRoots { get; init; }
+
     /// <summary>Display name override (custom folders); null means use the localized key.</summary>
     public string? DisplayName { get; init; }
 
@@ -50,8 +56,7 @@ public sealed class CleanupTarget
 
     public IReadOnlyList<string> ResolveRoots()
     {
-        var roots = RootPatterns
-            .SelectMany(PathResolver.Expand)
+        var roots = (Finder?.Invoke() ?? RootPatterns.SelectMany(PathResolver.Expand))
             .Distinct(PathGuard.Comparer)
             .Where(PathGuard.IsAllowedRoot)
             .Where(r => !ExcludedNames.Contains(Path.GetFileName(r), PathGuard.Comparer))

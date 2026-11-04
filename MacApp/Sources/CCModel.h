@@ -5,6 +5,7 @@
 #import "CCEngine.h"
 #import "CCInsights.h"
 #import "CCSettings.h"
+#import "CCProcesses.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -26,6 +27,10 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 @property (nonatomic, copy, readonly) NSString *identifier;
 @property (nonatomic, copy) NSArray<NSString *> *roots;
 @property (nonatomic, readonly) BOOL isPresent;
+/// Looks for the roots again: junk that comes and goes (an abandoned Chrome copy, a finished session's folder).
+- (void)refreshPresence;
+/// Roots worked out elsewhere (a scan finds them off the main thread).
+- (void)applyRoots:(NSArray<NSString *> *)roots;
 @property (nonatomic) BOOL enabled;
 @property (nonatomic) long long bytes;
 @property (nonatomic) NSInteger fileCount;
@@ -35,6 +40,10 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 @property (nonatomic) double share;
 @property (nonatomic, copy) NSArray<CCEntry *> *topEntries;
 @property (nonatomic, strong, nullable) CCScanResult *lastResult;
+/// A clean left files behind (in use, or out of reach): only a new scan offers them again.
+@property (nonatomic, readonly) BOOL hasLeftovers;
+/// The Trash: emptied rather than cleaned, and shown on its own line rather than as junk of its category.
+@property (nonatomic, readonly) BOOL isTrash;
 
 @property (nonatomic, readonly) NSString *name;
 @property (nonatomic, readonly) NSString *details;
@@ -93,6 +102,16 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 @property (nonatomic, readonly) NSInteger presentCount;
 @property (nonatomic, readonly) double ringAngle;
 @property (nonatomic, readonly) BOOL canClean;
+/// What a press of Clean frees now; files a clean could not remove are left out until the next scan.
+@property (nonatomic, readonly) long long cleanableBytes;
+/// All that is left to clean is the Trash: the button empties it.
+@property (nonatomic, readonly) BOOL onlyTrashLeft;
+/// What is in the Trash; on its own line of the dashboard unless the ring already shows it.
+@property (nonatomic, readonly) long long trashBytes;
+@property (nonatomic, readonly) BOOL showsTrashLine;
+@property (nonatomic, readonly) NSString *trashLine;
+/// Under the ring: the share of the whole disk that a press of Clean frees.
+@property (nonatomic, readonly) NSString *ringCaption;
 
 // disk
 @property (nonatomic, readonly) NSString *diskName;
@@ -112,6 +131,8 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 @property (nonatomic, readonly) NSString *cleanSummary;
 @property (nonatomic, readonly) NSArray<CCCleanLogItem *> *cleanLog;
 
+/// The icon of the next question; the trash when nil. Read and cleared by the window.
+@property (nonatomic, copy, nullable) NSString *confirmSymbol;
 /// Asks before cleaning; the block answers with YES to go ahead.
 @property (nonatomic, copy, nullable) void (^confirm)(NSString *title, NSString *body, NSString *okText, BOOL danger, void (^answer)(BOOL ok));
 
@@ -121,9 +142,20 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 - (void)clean;
 - (void)cancelClean;
 - (void)closeCleanOverlay;
-- (void)selectSafe;
-- (void)selectAll;
+/// How targets are picked: by the app from their risk (Safe, Safe + Moderate) or by hand. Any tick changed by hand
+/// switches to Manual, starting from what was ticked.
+@property (nonatomic, readonly) CCSelectionMode selectionMode;
+/// Manual brings back the ticks last set by hand.
+- (void)setSelectionMode:(CCSelectionMode)mode;
 - (void)selectNone;
+/// Ticks one target (from the Disk page), leaving the automatic mode only when the mode would not pick it.
+- (void)includeTarget:(NSString *)identifier;
+/// The Disk page's Clean: ticks the target (nil: everything the Disk page counts as cleanable), opens Targets and asks
+/// to clean exactly those; scans first when they were not scanned yet.
+- (void)cleanFromDisk:(nullable NSString *)targetId;
+/// What the Disk page counts as cleanable: found targets that are not Careful (models) and not the Trash.
+@property (nonatomic, readonly) NSArray<CCTargetItem *> *diskCleanable;
+@property (nonatomic, readonly) long long diskCleanableBytes;
 - (void)setTarget:(CCTargetItem *)target enabled:(BOOL)enabled;
 - (void)setCategory:(CCCategoryItem *)category enabled:(BOOL)enabled;
 - (void)openCategory:(CCCategoryItem *)category;
@@ -137,12 +169,21 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 /// Moves one entry to the Trash (or deletes it, per the setting); the answer arrives on the main thread.
 - (void)deleteEntry:(CCEntry *)entry ofTarget:(CCTargetItem *)target completion:(void (^)(BOOL ok))completion;
 - (void)runInsightAction:(CCInsight *)insight;
+/// Processes that are stuck (an orphaned Claude shell loop, a disk-wide search, a bloated Hermes tab); refreshed with
+/// the insights.
+@property (nonatomic, readonly) NSArray<CCStuckProcess *> *stuckProcesses;
+/// The Hermes tab is closed with the whole Hermes browser, through its own stop script; nothing else can end it.
+- (BOOL)canTerminate:(CCStuckProcess *)process;
+/// Asks, then ends it.
+- (void)terminateStuck:(CCStuckProcess *)process;
 - (void)refreshInsights;
 /// Space freed outside a clean (the Disk page), added to the all-time total.
 - (void)addFreed:(long long)bytes;
 - (void)refreshDisk;
 - (void)refreshAccess;
 - (void)openFullDiskAccessSettings;
+/// Without Full Disk Access, asks for it and opens its page of System Settings; `declined` runs when the answer is no.
+- (void)askForFullDiskAccessDeclined:(nullable void (^)(void))declined;
 - (void)addCustomFolder:(NSString *)folder refused:(void (^)(void))refused;
 - (void)removeCustomFolder:(NSString *)folder;
 - (void)resetSettings;

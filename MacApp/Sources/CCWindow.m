@@ -100,13 +100,15 @@ static CCModel *M(void) { return CCModel.shared; }
 
 @interface CCNavItem : NSView <CCLive>
 @property (nonatomic) BOOL selected;
+/// A figure at the trailing edge (what the page holds), like Finder's sidebar counts; nil hides it.
+@property (nonatomic, copy) NSString *detail;
 @property (nonatomic, copy) void (^onClick)(void);
 @end
 
 @implementation CCNavItem {
     CCBox *_box;
     CCIcon *_icon;
-    CCLabel *_label;
+    CCLabel *_label, *_detail;
     NSTrackingArea *_tracking;
     BOOL _hovered;
 }
@@ -120,12 +122,18 @@ static CCModel *M(void) { return CCModel.shared; }
         _icon = [CCIcon symbol:symbol size:17 weight:NSFontWeightRegular role:CCRoleMuted];
         _label = [CCLabel key:key size:14 weight:NSFontWeightMedium role:CCRoleMuted];
         NSStackView *row = CCHStack(@[ _icon, _label ], 14);
+        _detail = [CCLabel text:@"" size:12 weight:NSFontWeightMedium role:CCRoleFaint];
+        _detail.hidden = YES;
         [self addSubview:_box];
         [self addSubview:row];
+        [self addSubview:_detail];
         CCPin(_box, self, NSEdgeInsetsMake(0, 0, 0, 0));
         [NSLayoutConstraint activateConstraints:@[
             [row.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:14],
             [row.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+            [_detail.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-14],
+            [_detail.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+            [_detail.leadingAnchor constraintGreaterThanOrEqualToAnchor:row.trailingAnchor constant:8],
             [_icon.widthAnchor constraintEqualToConstant:22],
         ]];
         self.accessibilityElement = YES;
@@ -135,6 +143,14 @@ static CCModel *M(void) { return CCModel.shared; }
     }
     return self;
 }
+
+- (void)setDetail:(NSString *)detail {
+    _detail.stringValue = detail ?: @"";
+    _detail.hidden = detail.length == 0;
+    self.accessibilityValueDescription = detail;
+}
+
+- (NSString *)detail { return _detail.hidden ? nil : _detail.stringValue; }
 
 - (void)setSelected:(BOOL)selected {
     _selected = selected;
@@ -205,16 +221,22 @@ static CCModel *M(void) { return CCModel.shared; }
     CCDetailsSheet *_details;
     CCConfirmDialog *_confirm;
     CCToast *_toast;
+    /// Per page: its width is the host's, required, active for the page on screen only.
+    NSArray<NSLayoutConstraint *> *_pageFits;
     BOOL _wasDark;
 }
+
+static const CGFloat CCWindowMinWidth = 760, CCWindowMinHeight = 460;
 
 - (instancetype)init {
     CCSettings *s = M().settings;
     NSRect visible = NSScreen.mainScreen.visibleFrame;
-    CGFloat width = s.windowWidth >= 980 ? s.windowWidth : 1240;
-    CGFloat height = s.windowHeight >= 480 ? s.windowHeight : 800;
-    width = MAX(980, MIN(width, visible.size.width - 16));
-    height = MAX(MIN(480, visible.size.height - 16), MIN(height, visible.size.height - 16));
+    // Opens clear of the Dock and the menu bar with room to spare, never the whole height of a small screen; the
+    // saved size is kept when it still fits.
+    CGFloat width = s.windowWidth >= CCWindowMinWidth ? s.windowWidth : 1120;
+    CGFloat height = s.windowHeight >= CCWindowMinHeight ? s.windowHeight : 720;
+    width = MAX(MIN(CCWindowMinWidth, visible.size.width), MIN(width, visible.size.width - 48));
+    height = MAX(MIN(CCWindowMinHeight, visible.size.height), MIN(height, visible.size.height - 56));
     NSRect frame = NSMakeRect(NSMidX(visible) - width / 2, NSMidY(visible) - height / 2, width, height);
 
     CCWindow *window = [[CCWindow alloc] initWithContentRect:frame
@@ -228,7 +250,7 @@ static CCModel *M(void) { return CCModel.shared; }
     window.toolbar = [[NSToolbar alloc] initWithIdentifier:@"main"];
     window.toolbarStyle = NSWindowToolbarStyleUnified;
     window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
-    window.contentMinSize = NSMakeSize(980, 480);
+    window.contentMinSize = NSMakeSize(CCWindowMinWidth, CCWindowMinHeight);
     window.releasedWhenClosed = NO;
     window.tabbingMode = NSWindowTabbingModeDisallowed;
     if ((self = [super initWithWindow:window])) {
@@ -294,13 +316,25 @@ static CCModel *M(void) { return CCModel.shared; }
     settings.applyAppearance = ^{ [weak applyAppearance]; };
     settings.alert = ^(NSString *title, NSString *body) { [weak alert:title body:body]; };
     _pages = @[ [CCDashboardPage new], [CCTargetsPage new], [CCDiskPage new], settings, [CCAboutPage new] ];
+    NSMutableArray<NSLayoutConstraint *> *fits = [NSMutableArray array];
     for (CCPageView *page in _pages) {
         page.translatesAutoresizingMaskIntoConstraints = NO;
         page.wantsLayer = YES;
         page.hidden = YES;
         [_pageHost addSubview:page];
-        CCPin(page, _pageHost, NSEdgeInsetsMake(0, 0, 0, 0));
+        // Only the page on screen holds the window's width: a hidden page that needs more room would otherwise keep
+        // the window from getting narrower. Hidden ones follow the host's width when they can.
+        NSLayoutConstraint *follow = [page.trailingAnchor constraintEqualToAnchor:_pageHost.trailingAnchor];
+        follow.priority = NSLayoutPriorityDragThatCanResizeWindow - 20;
+        [NSLayoutConstraint activateConstraints:@[
+            [page.topAnchor constraintEqualToAnchor:_pageHost.topAnchor],
+            [page.leadingAnchor constraintEqualToAnchor:_pageHost.leadingAnchor],
+            [page.bottomAnchor constraintEqualToAnchor:_pageHost.bottomAnchor],
+            follow,
+        ]];
+        [fits addObject:[page.trailingAnchor constraintEqualToAnchor:_pageHost.trailingAnchor]];
     }
+    _pageFits = fits;
 
     _cleanOverlay = CCAuto([CCCleanOverlay new]);
     _details = CCAuto([CCDetailsSheet new]);
@@ -397,13 +431,16 @@ static CCModel *M(void) { return CCModel.shared; }
     _diskBar.fillGradient = ^NSArray<NSColor *> *{ return CCTheme.accentGradient; };
     CCSize(_diskBar, 0, 6);
     _diskText = [CCLabel text:@"" size:11.5 weight:NSFontWeightRegular role:CCRoleFaint];
+    // Wraps rather than lose the figure: a long translation takes two lines.
     _lifetime = [CCLabel text:@"" size:11.5 weight:NSFontWeightRegular role:CCRoleSuccess];
+    _lifetime.wraps = YES;
     NSStackView *disk = CCVStack(@[ diskTop, _diskBar, _diskText, _diskFree, _lifetime ], 0);
     [disk setCustomSpacing:2 afterView:_diskText];
     [disk setCustomSpacing:12 afterView:diskTop];
     [disk setCustomSpacing:8 afterView:_diskBar];
     [disk setCustomSpacing:4 afterView:_diskText];
-    for (NSView *v in @[ diskTop, _diskBar ]) [v.widthAnchor constraintEqualToAnchor:disk.widthAnchor].active = YES;
+    [disk setCustomSpacing:4 afterView:_diskFree];
+    for (NSView *v in @[ diskTop, _diskBar, _lifetime ]) [v.widthAnchor constraintEqualToAnchor:disk.widthAnchor].active = YES;
     CCCard *diskCard = [CCCard card];
     diskCard.radius = 16;
     [diskCard addSubview:disk];
@@ -491,6 +528,11 @@ static CCModel *M(void) { return CCModel.shared; }
     _accessPill.hidden = !m.hasFullDiskAccess;
     _accessPill.label.stringValue = L(@"titlebar.admin");
     _themeButton.toolTip = L(@"titlebar.theme");
+    // One number at the edge of the sidebar: what a press of Clean frees, the same on Overview and the Disk page.
+    long long cleanable = m.hasResults && !m.scanning ? m.cleanableBytes : 0;
+    _navItems[CCPageDashboard].detail = cleanable > 0 ? CCFormatBytes(cleanable) : nil;
+    _navItems[CCPageTargets].detail = nil;
+    _navItems[CCPageDisk].detail = nil;
     for (CCPageView *page in _pages)
         if (!page.hidden) [page refresh];
     if (m.overlayVisible) [_cleanOverlay refresh];
@@ -518,6 +560,7 @@ static CCModel *M(void) { return CCModel.shared; }
     [self moveIndicator:!first];
 
     next.hidden = NO;
+    for (NSUInteger i = 0; i < _pageFits.count; i++) _pageFits[i].active = i == (NSUInteger)page;
     [next refresh];
     [_pageHost addSubview:next positioned:NSWindowAbove relativeTo:nil];
     if (!next.entrancePlayed) {
@@ -612,20 +655,72 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-retain-cycles"
 // The step block keeps itself alive until the app quits at the end of the run.
+- (void)runTour {
+    void (^after)(double, dispatch_block_t) = ^(double seconds, dispatch_block_t block) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), block);
+    };
+    void (^mark)(const char *) = ^(const char *name) {
+        printf("tour %s %.3f\n", name, NSDate.date.timeIntervalSince1970);
+        fflush(stdout);
+    };
+    __block void (^whenIdle)(dispatch_block_t);
+    whenIdle = ^(dispatch_block_t block) {
+        if (M().scanning || CCDiskModel.shared.analyzing) after(0.05, ^{ whenIdle(block); });
+        else block();
+    };
+    CCDiskModel *disk = CCDiskModel.shared;
+    after(4.0, ^{
+        mark("start");
+        after(1.5, ^{
+            mark("scan");
+            [M() startScan];
+            after(0.3, ^{ whenIdle(^{
+                mark("scanned");
+                after(1.6, ^{
+                    mark("disk");
+                    M().page = CCPageDisk;
+                    after(2.6, ^{
+                        mark("band");
+                        [disk pickSegment:CCSpaceSystem];
+                        after(3.0, ^{
+                            mark("clear");
+                            [disk clearFilter];
+                            after(2.2, ^{
+                                mark("pick");
+                                for (CCVolume *v in disk.volumes)
+                                    if (!v.isHome) { [disk selectVolume:v]; break; }
+                                after(0.3, ^{ whenIdle(^{
+                                    mark("mapped");
+                                    after(2.6, ^{
+                                        mark("end");
+                                        [NSApp terminate:nil];
+                                    });
+                                }); });
+                            });
+                        });
+                    });
+                });
+            }); });
+        });
+    });
+}
+
 - (void)captureInto:(NSString *)folder {
     [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
     __weak CCWindowController *weak = self;
     __block NSInteger step = 0;
     __block BOOL settled = NO, diskSettled = NO;
-    NSArray *shots = @[ @"dashboard", @"targets", @"disk", @"settings", @"settings-cleaning", @"about", @"insights", @"light", @"expanded", @"details", @"confirm" ];
+    NSArray *shots = @[ @"dashboard", @"targets", @"disk", @"settings", @"settings-cleaning", @"about", @"insights", @"light", @"expanded", @"details", @"disk-offer", @"confirm" ];
     // --capture-clean also runs the clean it asked about (into the Trash by default) and shoots the result.
-    if ([NSProcessInfo.processInfo.arguments containsObject:@"--capture-clean"]) shots = [shots arrayByAddingObject:@"cleaning"];
+    // Then Overview and the Disk page once the clean is over, to see the numbers go down together.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--capture-clean"])
+        shots = [shots arrayByAddingObjectsFromArray:@[ @"cleaning", @"after", @"after-disk" ]];
     // --page disk shoots only the Disk page: the map, then an item with its parts open. Nothing is scanned or removed.
     NSArray *args = NSProcessInfo.processInfo.arguments;
     NSUInteger pageArg = [args indexOfObject:@"--page"];
     BOOL diskOnly = pageArg != NSNotFound && pageArg + 1 < args.count && [[args[pageArg + 1] lowercaseString] isEqualToString:@"disk"];
     // It also resizes the window wide and to its minimum, and checks every page lets it grow and shrink (stdout).
-    if (diskOnly) shots = @[ @"disk", @"disk-parts", @"disk-wide", @"disk-narrow", @"disk-narrow-top", @"resize-check" ];
+    if (diskOnly) shots = @[ @"disk", @"disk-filter", @"disk-parts", @"disk-wide", @"disk-narrow", @"disk-narrow-top", @"resize-check" ];
     void (^resize)(CGFloat) = ^(CGFloat width) {
         CCWindowController *s = weak;
         NSRect visible = s.window.screen.visibleFrame;
@@ -667,24 +762,44 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
         if ([shot isEqualToString:@"dashboard"]) M().page = CCPageDashboard;
         else if ([shot isEqualToString:@"targets"]) M().page = CCPageTargets;
         else if ([shot isEqualToString:@"disk"]) M().page = CCPageDisk;
-        else if ([shot isEqualToString:@"disk-parts"]) [(CCDiskPage *)s->_pages[CCPageDisk] revealPartsForCapture];
+        else if ([shot isEqualToString:@"disk-filter"]) [CCDiskModel.shared pickSegment:CCSpaceSystem];
+        else if ([shot isEqualToString:@"disk-parts"]) {
+            [CCDiskModel.shared clearFilter];
+            [(CCDiskPage *)s->_pages[CCPageDisk] revealPartsForCapture];
+        }
         else if ([shot isEqualToString:@"disk-wide"]) resize(MIN(1600, NSWidth(s.window.screen.visibleFrame) - 16));
-        else if ([shot isEqualToString:@"disk-narrow"]) resize(980);
+        else if ([shot isEqualToString:@"disk-narrow"]) resize(CCWindowMinWidth);
         else if ([shot isEqualToString:@"disk-narrow-top"]) {
             NSScrollView *scroll = s->_pages[CCPageDisk].subviews.firstObject;
             [scroll.documentView scrollPoint:NSZeroPoint];
         }
         else if ([shot isEqualToString:@"resize-check"]) {
             NSArray *names = @[ @"dashboard", @"targets", @"disk", @"settings", @"about" ];
+            NSRect visible = s.window.screen.visibleFrame;
             for (NSUInteger i = 0; i < names.count; i++) {
                 M().page = (CCPage)i;
-                CGFloat got[2];
-                CGFloat want[2] = { MIN(1600, NSWidth(s.window.screen.visibleFrame) - 16), 980 };
+                // Wide and tall as the screen allows, then the smallest the window may be.
+                NSSize want[2] = { NSMakeSize(MIN(1600, NSWidth(visible)), NSHeight(visible)), s.window.minSize };
                 for (int k = 0; k < 2; k++) {
-                    resize(want[k]);
-                    got[k] = NSWidth(s.window.frame);
+                    // As a drag of the window's corner does: the size asked for at the drag's priority, so whatever is
+                    // stronger than a drag (a button, a label that will not shrink) keeps the window wider.
+                    NSView *content = s.window.contentView;
+                    NSLayoutConstraint *w = [content.widthAnchor constraintEqualToConstant:want[k].width];
+                    NSLayoutConstraint *h = [content.heightAnchor constraintEqualToConstant:want[k].height];
+                    w.priority = h.priority = NSLayoutPriorityDragThatCanResizeWindow;
+                    w.active = h.active = YES;
+                    // A drag lays out again on every move, and wrapping text learns its new width each time.
+                    for (int pass = 0; pass < 12; pass++) {
+                        [s.window layoutIfNeeded];
+                        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+                    }
+                    w.active = h.active = NO;
+                    [s.window setFrameTopLeftPoint:NSMakePoint(NSMinX(visible), NSMaxY(visible))];
+                    NSRect got = s.window.frame;
+                    BOOL inside = NSContainsRect(NSInsetRect(visible, -0.5, -0.5), got);
+                    printf("resize %-9s asked %.0fx%.0f -> %.0fx%.0f%s\n", [names[i] UTF8String], want[k].width, want[k].height,
+                           NSWidth(got), NSHeight(got), inside ? "" : "  OUTSIDE the screen (under the Dock or menu bar)");
                 }
-                printf("resize %-9s asked %.0f -> %.0f, asked %.0f -> %.0f\n", [names[i] UTF8String], want[0], got[0], want[1], got[1]);
             }
             fflush(stdout);
             M().page = CCPageDisk;
@@ -717,11 +832,22 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
             M().filter = @"All";
             M().page = CCPageDashboard;
             if (M().topTargets.firstObject) [M() openDetails:M().topTargets.firstObject];
+        } else if ([shot isEqualToString:@"disk-offer"]) {
+            // The Disk page's "can be cleaned" button: Targets with those ticked, and the question about exactly them.
+            [M() closeDetails];
+            if (M().settings.confirmClean) [M() cleanFromDisk:nil];
         } else if ([shot isEqualToString:@"confirm"]) {
             [M() closeDetails];
             M().page = CCPageDashboard;
             // Only to shoot the question: with "Ask before cleaning" off, Clean would start right away.
             if (M().settings.confirmClean) [M() clean];
+        } else if ([shot isEqualToString:@"after"]) {
+            [M() closeCleanOverlay];
+            M().page = CCPageDashboard;
+            NSScrollView *scroll = s->_pages[CCPageDashboard].subviews.firstObject;
+            [scroll.documentView scrollPoint:NSZeroPoint];
+        } else if ([shot isEqualToString:@"after-disk"]) {
+            M().page = CCPageDisk;
         } else if ([shot isEqualToString:@"cleaning"]) {
             [s->_confirm closeWith:YES];
             after(0.5, next);

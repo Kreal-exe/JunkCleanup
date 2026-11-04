@@ -4,6 +4,9 @@
 #import "CCCore.h"
 #import "CCEngine.h"
 #import "CCSettings.h"
+#import "CCInsights.h"
+#import "CCProcesses.h"
+#include <sys/attr.h>
 #include <sys/stat.h>
 #include <utime.h>
 
@@ -116,7 +119,7 @@ static void TestCatalogAndStrings(NSArray<NSString *> *folders) {
         [ids addObject:t.identifier];
         CHECK(en[t.nameKey] != nil, @"missing %@", t.nameKey);
         CHECK(en[t.descriptionKey] != nil, @"missing %@", t.descriptionKey);
-        CHECK(t.rootPatterns.count > 0, @"%@ has no roots", t.identifier);
+        CHECK(t.rootPatterns.count > 0 || t.finder, @"%@ has no roots", t.identifier);
         CHECK(t.category != CCCategoryCustom, @"%@ is custom", t.identifier);
         for (NSString *p in t.rootPatterns) {
             CHECK(![patterns containsObject:p], @"%@ is listed twice", p);
@@ -355,8 +358,18 @@ static void TestSettings(void) {
     EQUAL(r.targetStates[@"dev.pip"], @NO);
     EQUAL(r.customFolders, @[ @"/tmp/x" ]);
     CHECK(r.lifetimeBytesFreed == 12345, @"lifetime not saved");
+    EQUAL(r.selectionMode, @"safe");
+    r.selectionMode = @"moderate";
+    [r save];
+    EQUAL([CCSettings load].selectionMode, @"moderate");
+    // A file from before the setting existed: the app picks the safe targets by itself.
+    [@"{ \"theme\": \"light\", \"targetStates\": { \"dev.pip\": false } }" writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    CCSettings *old = [CCSettings load];
+    EQUAL(old.selectionMode, @"safe");
+    EQUAL(old.targetStates[@"dev.pip"], @NO);
     [r resetToDefaults];
     CHECK(r.measureDiskWithScan && r.confirmClean, @"reset leaves them off");
+    EQUAL(r.selectionMode, @"safe");
     [@"{ not json" writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
     EQUAL([CCSettings load].theme, @"dark");
     unsetenv("JUNKCLEANUP_SETTINGS");
@@ -407,11 +420,131 @@ static CCSpaceScope *HomeScope(BOOL fullDiskAccess) {
     return scope;
 }
 
+/// An app's leftovers: by id and exact name, never another app's or a vendor's whole folder.
+static void TestAppleIntelligence(void) {
+    NSString *folder = Scratch();
+    void (^Record)(NSString *, long long) = ^(NSString *entry, long long bytes) {
+        // The shape MobileAsset writes: a persisted state whose descriptor is a keyed archive holding the sizes.
+        NSDictionary *archive = @{ @"$archiver": @"NSKeyedArchiver", @"$objects": @[ @"$null", @{ @"downloadedFilesystemBytes": @(bytes) } ] };
+        NSData *blob = [NSPropertyListSerialization dataWithPropertyList:archive format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
+        NSDictionary *state = @{ @"SUCorePersistedStatePolicySecureCodedObjectsFields": @{ @"assetDescriptor": blob } };
+        NSString *name = [NSString stringWithFormat:@"AutoAssetDescriptors_Entry_%@_0.state", entry];
+        [state writeToFile:[folder stringByAppendingPathComponent:name] atomically:YES];
+    };
+    Record(@"com.apple.MobileAsset.UAF.FM.GenerativeModels_com.apple.fm.language.base_9.0.1.2", 1000);
+    Record(@"com.apple.MobileAsset.UAF.FM.GenerativeModels_com.apple.fm.language.base_10.0.1.2", 3000); // newer version wins
+    Record(@"com.apple.MobileAsset.UAF.FM.Visual_com.apple.fm.visual.base_1.0", 500);
+    Record(@"com.apple.MobileAsset.UAF.Siri.Understanding_com.apple.siri.asr_3100.1", 7000);            // Siri, not the models
+    long long bytes = [CCInsights appleIntelligenceBytesInFolder:folder];
+    CHECK(bytes == 3500, @"Apple Intelligence models measured %lld, expected 3500", bytes);
+    CHECK([CCInsights appleIntelligenceBytesInFolder:[folder stringByAppendingPathComponent:@"missing"]] == 0, @"a missing folder is 0");
+}
+
+static void TestAppLeftovers(void) {
+    NSString *home = Scratch();
+    setenv("JUNKCLEANUP_HOME", home.fileSystemRepresentation, 1);
+    NSString *(^L_)(NSString *) = ^NSString *(NSString *p) { return [[home stringByAppendingPathComponent:@"Library"] stringByAppendingPathComponent:p]; };
+    NSString *apps = Scratch();
+    NSString *(^App)(NSString *, NSString *) = ^NSString *(NSString *name, NSString *identifier) {
+        NSString *app = [apps stringByAppendingPathComponent:[name stringByAppendingString:@".app"]];
+        [NSFileManager.defaultManager createDirectoryAtPath:[app stringByAppendingPathComponent:@"Contents"] withIntermediateDirectories:YES attributes:nil error:nil];
+        [@{ @"CFBundleIdentifier": identifier, @"CFBundleName": name } writeToFile:[app stringByAppendingPathComponent:@"Contents/Info.plist"] atomically:YES];
+        return app;
+    };
+    NSString *chrome = App(@"Google Chrome", @"com.google.Chrome");
+    NSString *canary = App(@"Google Chrome Canary", @"com.google.Chrome.canary");
+    NSString *safari = App(@"Pages", @"com.apple.iWork.Pages");
+    NSArray *wanted = @[ @"Application Support/Google/Chrome/Default/History", @"Caches/com.google.Chrome/c", @"Caches/com.google.Chrome.helper/c",
+                         @"Preferences/com.google.Chrome.plist", @"Saved Application State/com.google.Chrome.savedState/s",
+                         @"Containers/com.google.Chrome/d", @"Group Containers/EQHXZ8M8AV.com.google.Chrome/g", @"WebKit/com.google.Chrome/w" ];
+    NSArray *others = @[ @"Application Support/Google/Keep/note", @"Caches/com.google.Chrome.canary/c", @"Caches/com.google.Chromecast/c",
+                         @"Application Support/Google Drive/d", @"Preferences/com.google.Chrome.canary.plist" ];
+    for (NSString *p in [wanted arrayByAddingObjectsFromArray:others]) Write(L_(p), 10);
+
+    NSArray<NSString *> *found = [CCAppLeftovers leftoversOfApp:chrome otherApps:@[ chrome, canary, safari ]];
+    for (NSString *p in @[ @"Application Support/Google/Chrome", @"Caches/com.google.Chrome", @"Caches/com.google.Chrome.helper", @"Preferences/com.google.Chrome.plist",
+                           @"Saved Application State/com.google.Chrome.savedState", @"Containers/com.google.Chrome", @"Group Containers/EQHXZ8M8AV.com.google.Chrome", @"WebKit/com.google.Chrome" ])
+        CHECK([found containsObject:[CCPathGuard normalize:L_(p)]] || [found containsObject:L_(p)], @"%@ not found: %@", p, found);
+    for (NSString *p in found) {
+        CHECK(![p containsString:@"canary"], @"another app's data: %@", p);
+        CHECK(![p containsString:@"Chromecast"] && ![p containsString:@"Keep"] && ![p containsString:@"Google Drive"], @"not Chrome's: %@", p);
+        CHECK(![p hasSuffix:@"Application Support/Google"], @"the vendor's whole folder: %@", p);
+    }
+    CHECK([CCAppLeftovers canUninstall:chrome], @"an ordinary app can be uninstalled");
+    CHECK(![CCAppLeftovers canUninstall:safari], @"Apple's apps stay");
+    CHECK(![CCAppLeftovers canUninstall:App(@"JunkCleanup", @"io.github.kreal-exe.JunkCleanup")], @"not itself");
+    CHECK(![CCAppLeftovers canUninstall:@"/Applications"], @"not the folder");
+}
+
+/// A drive other than the home one: the folders at its root, its files, the system's own folders and lost space.
+static void TestDriveMap(void) {
+    NSString *drive = Scratch();
+    NSString *(^D)(NSString *) = ^NSString *(NSString *p) { return [drive stringByAppendingPathComponent:p]; };
+    Write(D(@"Photos/a.raw"), 70000);
+    Write(D(@".tool/data.bin"), 90000);
+    Write(D(@"$RECYCLE.BIN/old.bin"), 90000);
+    Write(D(@"backup.zip"), 100000);
+
+    CCSpaceScope *scope = [CCSpaceScope new];
+    scope.rules = CCSpaceCatalog.rules;
+    NSString *inside = [drive stringByAppendingString:@"/"];
+    scope.includes = ^BOOL(NSString *path) { return [path hasPrefix:inside]; };
+    scope.roots = @[ [CCSpaceRoot pattern:drive segment:CCSpaceFiles keep:NO] ];
+    scope.filed = @{ D(@"$RECYCLE.BIN"): @(CCSpaceSystem) };
+    scope.keepNames = @[ @"$RECYCLE.BIN" ];
+    scope.volumePath = drive;
+    scope.looseFilesRoot = drive;
+    scope.hasFullDiskAccess = YES;
+    scope.smallFolder = 0;
+    scope.clusterSize = 128 * 1024;
+    CCSpaceReport *r = [[CCDiskMapEngine new] analyze:scope targets:@[ CCCatalog.allTargets.firstObject ] cancel:nil progress:nil];
+
+    CHECK(Find(r.items, @"hermes") == nil && Find(r.items, @"caches") == nil, @"another disk's items counted on this drive");
+    CCSpaceEntry *photos = Find(r.items, [@"folder:" stringByAppendingString:D(@"Photos")]);
+    CCSpaceEntry *tool = Find(r.items, [@"folder:" stringByAppendingString:D(@".tool")]);
+    CCSpaceEntry *bin = Find(r.items, [@"folder:" stringByAppendingString:D(@"$RECYCLE.BIN")]);
+    CHECK(photos && photos.segment == CCSpaceFiles && photos.risk == CCSpaceRiskKeep && !photos.canDelete, @"a folder at the root is your files");
+    CHECK(tool && tool.segment == CCSpaceOther && tool.risk == CCSpaceRiskCareful && tool.canDelete, @"a dot folder at the root");
+    CHECK(bin && bin.segment == CCSpaceSystem && bin.risk == CCSpaceRiskKeep && !bin.canDelete, @"the file system's own folder");
+    // Whole clusters: 70 000 bytes take 128 KB, and a file at the root is counted, not taken for lost space.
+    CHECK(photos.bytes == 128 * 1024, @"cluster size: %lld", photos.bytes);
+    CCSpaceEntry *loose = Find(r.items, @"loose");
+    CHECK(loose && loose.bytes == 128 * 1024 && loose.segment == CCSpaceFiles && !loose.canDelete, @"loose files: %lld", loose.bytes);
+    CHECK(r.measured == 4 * 128 * 1024, @"measured: %lld", r.measured);
+
+    CCSpaceReport *plain = [[CCDiskMapEngine new] analyze:scope targets:@[] cancel:nil progress:nil];
+    CHECK(Find(plain.items, @"unknown") == nil, @"unidentified space has a row only when the scope asks");
+
+    // Whatever no folder accounts for has a row of its own, so the band's rows add up to the band.
+    scope.namesUnaccounted = YES;
+    CCSpaceReport *named = [[CCDiskMapEngine new] analyze:scope targets:@[] cancel:nil progress:nil];
+    CCSpaceEntry *unknown = Find(named.items, @"unknown");
+    CHECK(unknown && !unknown.canDelete && unknown.segment == CCSpaceSystem, @"unidentified space has a row");
+    long long systemRows = 0;
+    for (CCSpaceEntry *e in named.items)
+        if (e.segment == CCSpaceSystem) systemRows += e.bytes;
+    CHECK(systemRows == named.segments[CCSpaceSystem], @"System rows %lld, band %lld", systemRows, named.segments[CCSpaceSystem]);
+    CHECK(named.measured == plain.measured, @"unidentified space counted as measured");
+    scope.listsSystemSpace = YES;
+    scope.hasFullDiskAccess = NO;
+    CCSpaceReport *closed = [[CCDiskMapEngine new] analyze:scope targets:@[] cancel:nil progress:nil];
+    CCSpaceEntry *noAccess = Find(closed.items, @"mac.noaccess");
+    CCSpaceEntry *sysVolumes = Find(closed.items, @"mac.sysvolumes");
+    CHECK(noAccess && Find(closed.items, @"unknown") == nil && !noAccess.canDelete, @"closed folders row without access");
+    CHECK(sysVolumes && sysVolumes.bytes > 0 && sysVolumes.children.count > 0 && !sysVolumes.canDelete, @"macOS volumes row");
+    CHECK(sysVolumes.bytes < closed.total, @"macOS volumes take %lld of a %lld disk", sysVolumes.bytes, closed.total);
+    CHECK(Find(closed.items, @"mac.appcontainers") == nil, @"containers opened without access");
+
+    NSArray<CCVolume *> *volumes = CCVolume.mounted;
+    CHECK(volumes.count > 0 && volumes.firstObject.isHome && volumes.firstObject.total > 0, @"the home disk comes first");
+}
+
 static void TestDiskMap(NSArray<NSString *> *folders) {
     NSString *home = Scratch();
     setenv("JUNKCLEANUP_HOME", home.fileSystemRepresentation, 1);
     NSString *(^H)(NSString *) = ^NSString *(NSString *p) { return [home stringByAppendingPathComponent:p]; };
     Write(H(@".hermes/cache/uv/wheel.bin"), 10000);
+    Write(H(@".hermes/cache/catalog.json"), 1000);
     Write(H(@".hermes/hermes-agent/run.py"), 5000);
     Write(H(@".hermes/hermes-agent/.cache/x.bin"), 3000);
     Write(H(@".hermes/backups/pre-restore.tar"), 2000);
@@ -425,6 +558,8 @@ static void TestDiskMap(NSArray<NSString *> *folders) {
     Write(H(@"Library/Application Support/OldApp/data.bin"), 1200);
     Write(H(@"Library/Containers/com.example.sandboxed/Data/secret"), 5000);
     Write(H(@"Documents/report.pages"), 1500);
+    Write(H(@"Music/song.m4a"), 1500);
+    Write(H(@"Pictures/photo.jpg"), 1500);
     Write(H(@"Projects/big.bin"), 7000);
     Write(H(@".outside/real.bin"), 3000);
     [NSFileManager.defaultManager createSymbolicLinkAtPath:H(@".hermes/cache/link") withDestinationPath:H(@".outside") error:nil];
@@ -444,7 +579,18 @@ static void TestDiskMap(NSArray<NSString *> *folders) {
     CHECK(backups.risk == CCSpaceRiskCareful && backups.canDelete, @"hermes backups");
     CHECK(logs.risk == CCSpaceRiskModerate, @"hermes logs");
     CHECK(installs.risk == CCSpaceRiskKeep && !installs.canDelete && agent.risk == CCSpaceRiskKeep && !agent.canDelete, @"hermes app parts");
-    CHECK(cache.bytes == Allocated(H(@".hermes/cache/uv/wheel.bin")), @"the cache followed a link: %lld", cache.bytes);
+    CHECK(cache.bytes == Allocated(H(@".hermes/cache/catalog.json")), @"the cache followed a link or counted uv: %lld", cache.bytes);
+    CCSpaceEntry *uv = Find(r.items, @"hermes/cache/uv");
+    CHECK(uv && uv.bytes == Allocated(H(@".hermes/cache/uv/wheel.bin")) && uv.canDelete && !uv.targetId, @"hermes uv part");
+
+    // A part that is a cleaner target's root is that target: cleaned from Overview, never removed here.
+    CCTarget *hermesTarget = nil;
+    for (CCTarget *t in CCCatalog.allTargets)
+        if ([t.identifier isEqualToString:@"app.hermes"]) hermesTarget = t;
+    CCSpaceReport *withHermes = [[CCDiskMapEngine new] analyze:HomeScope(YES) targets:@[ targets.firstObject, hermesTarget ] cancel:nil progress:nil];
+    CCSpaceEntry *uvTarget = Find(withHermes.items, @"hermes/cache/uv");
+    CHECK(uvTarget && [uvTarget.targetId isEqualToString:@"app.hermes"] && !uvTarget.canDelete, @"hermes uv is not the app.hermes target");
+    CHECK(Find(withHermes.items, @"app.hermes") == nil, @"app.hermes is counted twice, under caches too");
     CHECK(agent.bytes == Allocated(H(@".hermes/hermes-agent/run.py")), @"hermes-agent counted its cache: %lld", agent.bytes);
     CHECK(hermes.bytes == AllFiles(H(@".hermes"), @[]), @"hermes %lld != %lld", hermes.bytes, AllFiles(H(@".hermes"), @[]));
 
@@ -464,7 +610,10 @@ static void TestDiskMap(NSArray<NSString *> *folders) {
     CCSpaceEntry *projects = Find(r.items, [@"folder:" stringByAppendingString:H(@"Projects")]);
     CCSpaceEntry *support = Find(r.items, [@"folder:" stringByAppendingString:H(@"Library/Application Support")]);
     CHECK(documents && documents.risk == CCSpaceRiskKeep && !documents.canDelete && documents.segment == CCSpaceFiles, @"Documents");
-    CHECK(projects && projects.risk == CCSpaceRiskCareful && projects.canDelete, @"Projects");
+    // A folder of your own in the home folder is your files, not an unknown cache; a dot folder is a tool's data.
+    CHECK(projects && projects.risk == CCSpaceRiskKeep && !projects.canDelete && projects.segment == CCSpaceFiles, @"Projects");
+    CCSpaceEntry *outside = Find(r.items, [@"folder:" stringByAppendingString:H(@".outside")]);
+    CHECK(outside && outside.risk == CCSpaceRiskCareful && outside.canDelete && outside.segment == CCSpaceOther, @".outside");
     CHECK(support && support.risk == CCSpaceRiskKeep && support.children.count == 1 && support.children.firstObject.canDelete, @"Application Support");
     CHECK(Find(r.items, [@"folder:" stringByAppendingString:H(@"Library")]) == nil, @"~/Library listed as one folder");
     CHECK(Find(r.items, [@"folder:" stringByAppendingString:H(@"Library/Containers")]) == nil, @"a sandbox container was opened");
@@ -478,9 +627,14 @@ static void TestDiskMap(NSArray<NSString *> *folders) {
 
     // Without Full Disk Access, Documents is shown but not opened.
     CCSpaceReport *limited = [[CCDiskMapEngine new] analyze:HomeScope(NO) targets:targets cancel:nil progress:nil];
+    for (NSString *closed in @[ @"Music", @"Pictures" ]) {
+        CCSpaceEntry *e = Find(limited.items, [@"folder:" stringByAppendingString:H(closed)]);
+        CHECK(e && e.needsAccess && e.bytes == 0 && !e.canDelete, @"%@ opened without Full Disk Access", closed);
+    }
     CCSpaceEntry *guarded = Find(limited.items, [@"folder:" stringByAppendingString:H(@"Documents")]);
     CHECK(guarded && guarded.needsAccess && guarded.bytes == 0 && !guarded.canDelete, @"Documents without access");
-    CHECK(limited.measured == expected - Allocated(H(@"Documents/report.pages")), @"limited measured %lld", limited.measured);
+    CHECK(limited.measured == expected - Allocated(H(@"Documents/report.pages")) - Allocated(H(@"Music/song.m4a")) - Allocated(H(@"Pictures/photo.jpg")),
+          @"limited measured %lld", limited.measured);
 
     // A cancelled analysis measures nothing.
     CCCancelToken *stop = [CCCancelToken new];
@@ -529,6 +683,188 @@ static void TestDiskMap(NSArray<NSString *> *folders) {
     [NSFileManager.defaultManager removeItemAtPath:home error:nil];
 }
 
+
+// ───────────── what the mac-janitor watcher cleans ─────────────
+
+static CCTarget *ById(NSString *identifier) {
+    for (CCTarget *t in CCCatalog.allTargets)
+        if ([t.identifier isEqualToString:identifier]) return t;
+    return nil;
+}
+
+static void TestAutoSelection(void) {
+    CCTarget *npm = ById(@"dev.npm"), *caches = ById(@"mac.caches"), *hf = ById(@"dev.huggingface"), *trash = ById(@"mac.trash");
+    CCTarget *projects = ById(@"dev.projects"), *clones = ById(@"browser.chromeclones"), *cowork = ById(@"app.coworkvm");
+    CHECK(npm && caches && hf && trash && projects && clones && cowork, @"catalog ids changed");
+    CHECK(CCAutoSelects(npm, CCSelectionSafe) && CCAutoSelects(clones, CCSelectionSafe), @"Safe mode leaves out a Safe target");
+    CHECK(!CCAutoSelects(caches, CCSelectionSafe) && !CCAutoSelects(cowork, CCSelectionSafe), @"Safe mode picks a Moderate target");
+    CHECK(!CCAutoSelects(hf, CCSelectionSafe) && !CCAutoSelects(hf, CCSelectionModerate), @"a Careful target (models) was picked by the app");
+    CHECK(!CCAutoSelects(trash, CCSelectionSafe) && !CCAutoSelects(trash, CCSelectionModerate), @"the Trash was picked by the app");
+    CHECK(CCAutoSelects(caches, CCSelectionModerate) && CCAutoSelects(cowork, CCSelectionModerate), @"Moderate mode leaves out a Moderate target");
+    CHECK(!CCAutoSelects(projects, CCSelectionModerate), @"a target off by default was picked");
+    CHECK(!CCAutoSelects(npm, CCSelectionManual), @"Manual picks by itself");
+    CHECK(CCAutoSelects([CCCatalog customTargetForFolder:@"/tmp/x"], CCSelectionSafe), @"a folder you added is left out");
+    EQUAL(CCSelectionModeName(CCSelectionModeFromName(@"moderate")), @"moderate");
+    CHECK(CCSelectionModeFromName(nil) == CCSelectionSafe && CCSelectionModeFromName(@"junk") == CCSelectionSafe, @"unknown modes");
+}
+
+static void SetBirth(NSString *path, NSTimeInterval when) {
+    struct attrlist list = { .bitmapcount = ATTR_BIT_MAP_COUNT, .commonattr = ATTR_CMN_CRTIME };
+    struct timespec ts = { .tv_sec = (time_t)when, .tv_nsec = 0 };
+    setattrlist(path.fileSystemRepresentation, &list, &ts, sizeof ts, 0);
+}
+
+static void TestChromeClones(void) {
+    NSString *root = Scratch();
+    NSTimeInterval now = NSDate.date.timeIntervalSince1970;
+    NSString *old = [root stringByAppendingPathComponent:@"code_sign_clone.old"], *live = [root stringByAppendingPathComponent:@"code_sign_clone.live"];
+    NSString *edge = [root stringByAppendingPathComponent:@"code_sign_clone.edge"];
+    for (NSString *dir in @[ old, live, edge ]) Write([dir stringByAppendingPathComponent:@"Google Chrome.app/Contents/Info.plist"], 100);
+    Write([root stringByAppendingPathComponent:@"other"], 10);
+    SetBirth(old, now - 3600);
+    SetBirth(live, now - 30);
+    SetBirth(edge, now - 170);
+    NSArray *stale = CCStaleChromeClones(root, @[ @(now) ]);
+    EQUAL(stale, @[ old ]);
+    // No Chrome running: every copy is left behind.
+    CHECK(CCStaleChromeClones(root, @[]).count == 3, @"copies without a running Chrome");
+
+    // A copy full of framework links goes as a whole, links and all, never following them.
+    NSString *outside = [Scratch() stringByAppendingPathComponent:@"keep.bin"];
+    Write(outside, 500);
+    NSString *framework = [old stringByAppendingPathComponent:@"Google Chrome.app/Contents/Frameworks/F.framework"];
+    Write([framework stringByAppendingPathComponent:@"Versions/A/F"], 4096);
+    [NSFileManager.defaultManager createSymbolicLinkAtPath:[framework stringByAppendingPathComponent:@"Versions/Current"] withDestinationPath:@"A" error:nil];
+    [NSFileManager.defaultManager createSymbolicLinkAtPath:[framework stringByAppendingPathComponent:@"F"] withDestinationPath:@"Versions/Current/F" error:nil];
+    [NSFileManager.defaultManager createSymbolicLinkAtPath:[old stringByAppendingPathComponent:@"escape"] withDestinationPath:outside error:nil];
+    CCTarget *t = [CCTarget new];
+    t.identifier = @"test.clones";
+    t.finder = ^{ return @[ old ]; };
+    t.deletesWholeRoots = YES;
+    t.sharesBlocks = YES;
+    __block NSArray *stopped = nil;
+    t.beforeClean = ^(NSArray<NSString *> *roots) { stopped = roots; };
+    CCScanOptions *options = [CCScanOptions new];
+    CCScanResult *scan = [[CCScanEngine new] scanTarget:t options:options cancel:nil onBytes:nil];
+    CHECK(scan.fileCount == 2, @"clone files: %ld", (long)scan.fileCount);
+    // Fresh files share nothing: their private size is what they take.
+    CHECK(scan.totalBytes >= 4096 && scan.sharedBytes == 0, @"private size %lld, shared %lld", scan.totalBytes, scan.sharedBytes);
+    CCCleanOptions *clean = [CCCleanOptions new];
+    clean.useTrash = NO;
+    CCTargetCleanResult *result = [[CCCleanEngine new] cleanTarget:scan options:clean cancel:nil onProgress:nil];
+    CHECK(!Exists(old) && Exists(live) && Exists(edge), @"the abandoned copy was not removed whole");
+    CHECK(Exists(outside), @"a link inside the copy was followed");
+    CHECK(result.filesDeleted == 2 && result.failed == 0 && result.bytesFreed == scan.totalBytes, @"clean counts");
+    EQUAL(stopped, @[ old ]);
+
+    // The scan is old by the time Clean is pressed: what is no longer junk (Cowork opened, a session resumed) stays.
+    NSString *resumed = [Scratch() stringByAppendingPathComponent:@"session"];
+    Write([resumed stringByAppendingPathComponent:@"work.txt"], 100);
+    __block NSArray *junkNow = @[ resumed ];
+    CCTarget *g = [CCTarget new];
+    g.identifier = @"test.resumed";
+    g.finder = ^{ return junkNow; };
+    g.deletesWholeRoots = YES;
+    __block BOOL stoppedAnything = NO;
+    g.beforeClean = ^(NSArray<NSString *> *roots) { stoppedAnything = YES; };
+    CCScanResult *old2 = [[CCScanEngine new] scanTarget:g options:options cancel:nil onBytes:nil];
+    junkNow = @[];
+    CCTargetCleanResult *kept = [[CCCleanEngine new] cleanTarget:old2 options:clean cancel:nil onProgress:nil];
+    CHECK(Exists(resumed) && kept.filesDeleted == 0 && kept.failed == 1 && !stoppedAnything, @"a root that is no longer junk was removed");
+
+    // ps answers with launchd in the list; without a list, no copy is taken for abandoned.
+    NSArray *running = [CCProcesses snapshot];
+    BOOL hasLaunchd = NO;
+    for (CCProcess *p in running) hasLaunchd |= p.pid == 1;
+    CHECK(running.count > 10 && hasLaunchd, @"process snapshot");
+
+    // A real APFS clone shares every block: removing it frees nothing until the original changes.
+    NSString *original = [Scratch() stringByAppendingPathComponent:@"original.bin"];
+    Write(original, 1 << 20);
+    NSString *cloneDir = [root stringByAppendingPathComponent:@"code_sign_clone.apfs"];
+    [NSFileManager.defaultManager createDirectoryAtPath:cloneDir withIntermediateDirectories:YES attributes:nil error:nil];
+    if ([NSFileManager.defaultManager copyItemAtPath:original toPath:[cloneDir stringByAppendingPathComponent:@"copy.bin"] error:nil]) {
+        CCTarget *c = [CCTarget new];
+        c.identifier = @"test.apfs";
+        c.finder = ^{ return @[ cloneDir ]; };
+        c.sharesBlocks = YES;
+        CCScanResult *cs = [[CCScanEngine new] scanTarget:c options:options cancel:nil onBytes:nil];
+        CHECK(cs.fileCount == 1 && cs.totalBytes < (1 << 20) && cs.sharedBytes >= (1 << 19), @"clone: private %lld shared %lld", cs.totalBytes, cs.sharedBytes);
+    }
+}
+
+static void TestIdleRoots(void) {
+    NSString *base = Scratch();
+    NSString *busy = [base stringByAppendingPathComponent:@"busy"], *idle = [base stringByAppendingPathComponent:@"idle"];
+    Write([busy stringByAppendingPathComponent:@"deep/new.txt"], 10);
+    Write([idle stringByAppendingPathComponent:@"deep/old.txt"], 10);
+    for (NSString *p in @[ @"deep/old.txt", @"deep", @"" ]) Age([idle stringByAppendingPathComponent:p], 100);
+    Age([busy stringByAppendingPathComponent:@"deep"], 100);
+    Age(busy, 100);
+    CHECK(CCTouchedWithin(busy, 3600) && !CCTouchedWithin(idle, 3600), @"touched-within");
+    CHECK(CCTouchedWithin([busy stringByAppendingPathComponent:@"deep/new.txt"], 3600), @"a single fresh file");
+    CCTarget *t = [CCTarget new];
+    t.identifier = @"test.idle";
+    t.rootPatterns = @[ [base stringByAppendingPathComponent:@"*"] ];
+    t.idleDays = 1;
+    EQUAL([t resolveRoots], @[ idle ]);
+}
+
+static void TestCowork(void) {
+    NSString *sessions = Scratch();
+    NSString *org = [sessions stringByAppendingPathComponent:@"acct/org"];
+    NSString *tasks = [org stringByAppendingPathComponent:@"scheduled-tasks.json"];
+    Write([org stringByAppendingPathComponent:@"local_1/transcript.json"], 100);
+    for (NSString *p in @[ @"local_1/transcript.json", @"local_1" ]) Age([org stringByAppendingPathComponent:p], 48);
+    [@"{\"scheduledTasks\": []}" writeToFile:tasks atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    // What the Claude app rewrites by itself does not count.
+    Write([org stringByAppendingPathComponent:@"rpm/manifest.json"], 10);
+    Write([sessions stringByAppendingPathComponent:@"skills-plugin/x/skill.md"], 10);
+    NSString *why;
+    CHECK(!CCCoworkNeeded(sessions, 24 * 3600, &why), @"idle Cowork counted as in use (%@)", why);
+    [@"{\"scheduledTasks\": [{\"id\": \"daily\"}]}" writeToFile:tasks atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    CHECK(CCCoworkNeeded(sessions, 24 * 3600, &why) && [why isEqualToString:@"scheduled"], @"a scheduled task (%@)", why);
+    [@"not json" writeToFile:tasks atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    CHECK(CCCoworkNeeded(sessions, 24 * 3600, &why), @"an unreadable task list must keep the VM");
+    [@"{\"scheduledTasks\": []}" writeToFile:tasks atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    Write([org stringByAppendingPathComponent:@"local_1/new.json"], 10);
+    Age([org stringByAppendingPathComponent:@"local_1"], 48);
+    CHECK(CCCoworkNeeded(sessions, 24 * 3600, &why) && [why isEqualToString:@"recent"], @"a session used today (%@)", why);
+    CHECK(!CCCoworkNeeded([sessions stringByAppendingPathComponent:@"missing"], 24 * 3600, NULL), @"no sessions at all");
+}
+
+static void TestProcesses(void) {
+    CHECK(CCParseElapsed(@"1-02:03:04") == 93784 && CCParseElapsed(@"03:04") == 184 && CCParseElapsed(@"10:00:00") == 36000, @"etime");
+    CHECK(fabs(CCParseCPUTime(@"3:04.50") - 184.5) < 0.001 && CCParseCPUTime(@"1-00:00:01.00") == 86401, @"cputime");
+    NSString *ps = @"    1     0 1-00:00:00  0:10.00   0.0  9000 /sbin/launchd\n"
+                    "  100     1    12:00    3:00.00  50.0  2048 /bin/zsh -c source /Users/a/.claude/shell-snapshots/s.sh && eval 'while :; do :; done'\n"
+                    "  101     1    12:00    3:00.00  50.0  2048 /bin/zsh -c source /Users/a/.claude/shell-snapshots/s.sh && sleep 999\n"
+                    "  102   101    12:00    0:00.01   0.0  1024 sleep 999\n"
+                    "  150     1  1:00:00    0:01.00   0.0  1024 /bin/zsh -c source /Users/a/.claude/shell-snapshots/s.sh && find / -name x\n"
+                    "  200   150    06:00    0:10.00   5.0  1024 find / -name x\n"
+                    "  201   150    06:00    0:10.00   5.0  1024 find /Users/a/project -name x\n"
+                    "  300     1    10:00    0:10.00   5.0  1024 find / -name mine\n"
+                    "  400     1  1:00:00    1:00.00   1.0 90000 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/h/Hermes_Profile --remote-debugging-port=9223\n"
+                    "  401   400    30:00    9:00.00   2.0 3000000 /Applications/Google Chrome.app/Contents/Frameworks/Helper (Renderer).app/Contents/MacOS/Helper --type=renderer\n"
+                    "  402   400    30:00    0:09.00   1.0 200000 /Applications/Google Chrome.app/Contents/Frameworks/Helper (Renderer).app/Contents/MacOS/Helper --type=renderer\n"
+                    "  500     1    05:00    0:01.00   0.0 90000 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n"
+                    "garbage line\n";
+    NSArray<CCProcess *> *procs = [CCProcesses parse:ps];
+    CHECK(procs.count == 12, @"parsed %lu", (unsigned long)procs.count);
+    CCProcess *renderer = procs[9];
+    CHECK(renderer.pid == 401 && renderer.ppid == 400 && renderer.rss == 3000000LL * 1024 && renderer.age == 1800, @"fields");
+    NSArray *starts = [CCProcesses chromeStarts:procs now:10000];
+    EQUAL(starts, (@[ @(10000 - 3600), @(10000 - 300) ]));
+    NSArray<CCStuckProcess *> *stuck = [CCProcesses stuckIn:procs hermesIdleMinutes:0];
+    NSMutableDictionary<NSNumber *, CCStuckProcess *> *byPid = [NSMutableDictionary dictionary];
+    for (CCStuckProcess *p in stuck) byPid[@(p.pid)] = p;
+    CHECK(stuck.count == 3, @"stuck: %@", [stuck valueForKey:@"pid"]);
+    CHECK(byPid[@100].kind == CCStuckOrphanLoop && fabs(byPid[@100].cpu - 25) < 0.5, @"the orphaned loop");
+    CHECK(byPid[@200].kind == CCStuckDiskScan, @"the disk-wide find");
+    CHECK(byPid[@401].kind == CCStuckHermesTab && [byPid[@401].kindName isEqualToString:@"hermesTab"], @"the bloated Hermes tab");
+    CHECK(!byPid[@101] && !byPid[@201] && !byPid[@300] && !byPid[@402] && !byPid[@150], @"something healthy counted as stuck");
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         const char *strings = getenv("JUNKCLEANUP_STRINGS");
@@ -548,6 +884,14 @@ int main(int argc, const char *argv[]) {
         TestNestedTargets();
         TestSettings();
         if (folders.count == 2) TestDiskMap(folders);
+        TestDriveMap();
+        TestAppLeftovers();
+        TestAppleIntelligence();
+        TestAutoSelection();
+        TestChromeClones();
+        TestIdleRoots();
+        TestCowork();
+        TestProcesses();
         [NSFileManager.defaultManager removeItemAtPath:home error:nil];
 
         printf("%d passed, %d failed\n", gPassed, gFailed);

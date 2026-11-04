@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "แคชโมเดลคอมโพเนนต์และส่วนขยาย",
   "target.dev.playwright.name": "เบราว์เซอร์ Playwright",
   "target.dev.playwright.desc": "ไบนารีเบราว์เซอร์ที่ Playwright ดาวน์โหลด",
+  "target.dev.projects.name": "โฟลเดอร์บิลด์ของโปรเจกต์เก่า",
+  "target.dev.projects.desc": "node_modules, target, .venv, build และอื่น ๆ ในโปรเจกต์ที่ไม่ได้แก้ไข 30 วัน npm install, cargo build หรือ pip สร้างใหม่ได้",
   "target.dev.huggingface.name": "Hugging Face hub",
   "target.dev.huggingface.desc": "โมเดลและชุดข้อมูลที่ดาวน์โหลด อาจมีขนาดใหญ่มาก",
   "target.dev.android.name": "แคชบิลด์ Android",

@@ -59,7 +59,47 @@ static NSString *Run(NSString *tool, NSArray<NSString *> *arguments) {
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
 }
 
+/// Apple Intelligence's on-device models, as MobileAsset records them: world-readable descriptors, read as plain property
+/// lists, no private API. Several versions of one model can be on record; only the newest one counts.
+static long long AppleIntelligenceBytes(NSString *folder) {
+    NSArray<NSString *> *types = @[
+        @"com.apple.MobileAsset.UAF.FM.GenerativeModels", @"com.apple.MobileAsset.UAF.FM.Visual", @"com.apple.MobileAsset.UAF.FM.CodeLM",
+        @"com.apple.MobileAsset.UAF.Photos.MagicCleanup", @"com.apple.MobileAsset.UAF.Photos.SpatialPhotosRelive",
+    ];
+    NSString *prefix = @"AutoAssetDescriptors_Entry_";
+    // "<type>_<model>_<version>_0.state": the newest version of each model and its size.
+    NSMutableDictionary<NSString *, NSArray *> *newest = [NSMutableDictionary dictionary];
+    for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:folder error:nil]) {
+        if (![name hasPrefix:prefix] || ![name hasSuffix:@"_0.state"]) continue;
+        NSString *entry = [name substringWithRange:NSMakeRange(prefix.length, name.length - prefix.length - @"_0.state".length)];
+        BOOL wanted = NO;
+        for (NSString *type in types) wanted |= [entry hasPrefix:[type stringByAppendingString:@"_"]];
+        NSRange cut = [entry rangeOfString:@"_" options:NSBackwardsSearch];
+        if (!wanted || cut.location == NSNotFound) continue;
+        NSString *model = [entry substringToIndex:cut.location], *version = [entry substringFromIndex:cut.location + 1];
+
+        NSData *data = [NSData dataWithContentsOfFile:[folder stringByAppendingPathComponent:name]];
+        NSDictionary *state = data ? [NSPropertyListSerialization propertyListWithData:data options:0 format:NULL error:nil] : nil;
+        if (![state isKindOfClass:NSDictionary.class]) continue;
+        NSData *blob = state[@"SUCorePersistedStatePolicySecureCodedObjectsFields"][@"assetDescriptor"];
+        NSDictionary *archive = [blob isKindOfClass:NSData.class]
+            ? [NSPropertyListSerialization propertyListWithData:blob options:0 format:NULL error:nil] : nil;
+        NSArray *objects = [archive isKindOfClass:NSDictionary.class] ? archive[@"$objects"] : nil;
+        long long bytes = 0;
+        for (id object in [objects isKindOfClass:NSArray.class] ? objects : @[])
+            if ([object isKindOfClass:NSDictionary.class] && [object[@"downloadedFilesystemBytes"] isKindOfClass:NSNumber.class])
+                bytes = [object[@"downloadedFilesystemBytes"] longLongValue];
+        NSArray *known = newest[model];
+        if (!known || [version compare:known[0] options:NSNumericSearch] == NSOrderedDescending) newest[model] = @[ version, @(bytes) ];
+    }
+    long long total = 0;
+    for (NSArray *v in newest.allValues) total += [v[1] longLongValue];
+    return total;
+}
+
 @implementation CCInsights
+
++ (long long)appleIntelligenceBytesInFolder:(NSString *)folder { return AppleIntelligenceBytes(folder); }
 
 + (NSArray<CCInsight *> *)scanWithTrashTargetEnabled:(BOOL)trashTargetEnabled {
     NSMutableArray<CCInsight *> *found = [NSMutableArray array];
@@ -104,6 +144,13 @@ static NSString *Run(NSString *tool, NSArray<NSString *> *arguments) {
     long long simulators = FolderSize(devices, NULL);
     if (simulators >= GB)
         [found addObject:Make(@"simulators", @"ipad.and.iphone", simulators, CCInsightActionCopyCommand, @"xcrun simctl delete unavailable")];
+
+    // macOS keeps the models while Apple Intelligence is on; turning it off in Settings is the one public way to have
+    // macOS remove them (on macOS 15 and 26 there is no other).
+    long long intelligence = AppleIntelligenceBytes(@"/System/Library/AssetsV2/persisted/AutoAssetDescriptors");
+    if (intelligence >= GB / 2)
+        [found addObject:Make(@"appleintelligence", @"sparkles", intelligence, CCInsightActionOpenURL,
+                              @"x-apple.systempreferences:com.apple.Siri-Settings.extension")];
 
     if (!trashTargetEnabled) {
         BOOL denied = NO;

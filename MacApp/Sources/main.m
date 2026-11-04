@@ -5,9 +5,12 @@
 //   --theme <mode>     dark, light or system for this run
 //   --lang <code>      interface language for this run
 //   --capture <dir>    scan, save a PNG of every page into <dir>, quit
-//   --capture-clean    with --capture: also run the clean (into the Trash by default) and shoot it
+//   --drive <disk>     map this disk (a name or a mount point) on the Disk page
+//   --tour             the README animation's moves, timed, then quit; nothing is cleaned
+//   --capture-clean    with --capture: also run the clean, which DELETES the selected caches for good, and shoot it
 #import <Cocoa/Cocoa.h>
 #import "CCControls.h"
+#import "CCDiskPage.h"
 #import "CCModel.h"
 #import "CCWindow.h"
 
@@ -114,6 +117,8 @@ static NSMenuItem *Item(NSString *key, SEL action, NSString *keyEquivalent) {
     NSArray *pages = @[ @"dashboard", @"targets", @"disk", @"settings", @"about" ];
     if (page && [pages containsObject:page]) model.page = (CCPage)[pages indexOfObject:page];
 
+    if (Argument(@"--drive")) [CCDiskModel.shared preselectVolume:Argument(@"--drive")];
+
     [self buildMenu];
     [NSNotificationCenter.defaultCenter addObserverForName:CCLanguageDidChangeNotification object:nil queue:nil
                                                 usingBlock:^(NSNotification *n) { [self relabel:NSApp.mainMenu]; }];
@@ -125,7 +130,20 @@ static NSMenuItem *Item(NSString *key, SEL action, NSString *keyEquivalent) {
 
     NSString *capture = Argument(@"--capture");
     if (capture) [_window captureInto:capture.stringByStandardizingPath];
-    else if (Flag(@"--scan") || settings.scanOnStartup) [model startScan];
+    else if (Flag(@"--tour")) [_window runTour];
+    else {
+        if (Flag(@"--scan") || settings.scanOnStartup) [model startScan];
+        // One switch instead of a macOS question per folder; nothing protected is opened until it is on.
+        [model askForFullDiskAccessDeclined:nil];
+    }
+}
+
+/// Back from System Settings with the access granted: everything that was closed can be measured now.
+- (void)applicationDidBecomeActive:(NSNotification *)notification {
+    CCModel *model = CCModel.shared;
+    BOOL before = model.hasFullDiskAccess;
+    [model refreshAccess];
+    if (!before && model.hasFullDiskAccess) [model startScan];
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender { return YES; }

@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "Component model and extension caches.",
   "target.dev.playwright.name": "Playwright browsers",
   "target.dev.playwright.desc": "Browser binaries downloaded by Playwright.",
+  "target.dev.projects.name": "Old projects' build folders",
+  "target.dev.projects.desc": "node_modules, target, .venv, build and the like in projects untouched for 30 days. npm install, cargo build or pip brings them back.",
   "target.dev.huggingface.name": "Hugging Face hub",
   "target.dev.huggingface.desc": "Downloaded models and datasets. Can be very large.",
   "target.dev.android.name": "Android build cache",

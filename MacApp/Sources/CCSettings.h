@@ -18,6 +18,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL measureDiskWithScan;
 /// Clean asks first, showing how much will go.
 @property (nonatomic) BOOL confirmClean;
+/// "safe", "moderate" or "manual" (CCSelectionModeName): the app picks what to clean by itself, or uses targetStates.
+/// Files from before the setting existed load as "safe".
+@property (nonatomic, copy) NSString *selectionMode;
+/// The ticks set by hand, used in manual mode.
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *targetStates;
 @property (nonatomic, strong) NSMutableArray<NSString *> *customFolders;
 @property (nonatomic) double windowWidth;

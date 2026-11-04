@@ -281,6 +281,120 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
 
 @end
 
+/// A stuck process: what it is, why it counts as stuck, its memory, and a button that ends it.
+@interface CCStuckRow : CCBox
+@property (nonatomic, strong) CCStuckProcess *process;
+@property (nonatomic, strong) CCLabel *title, *detail, *size;
+@property (nonatomic, strong) CCButton *action;
+@end
+
+@implementation CCStuckRow
+
++ (instancetype)rowFor:(CCStuckProcess *)process {
+    CCStuckRow *row = [[self alloc] initWithFrame:NSZeroRect];
+    row.process = process;
+    row.radius = 14;
+    row.fill = ^NSColor *{ return CCTheme.inset; };
+    NSString *symbol = process.kind == CCStuckHermesTab ? @"globe" : process.kind == CCStuckDiskScan ? @"magnifyingglass" : @"arrow.triangle.2.circlepath";
+    CCIconTile *tile = [CCIconTile tileWithSymbol:symbol size:38 radius:11 iconSize:16];
+    tile.fill = ^NSColor *{ return CCTheme.dangerSoft; };
+    tile.icon.role = CCRoleDanger;
+    row.title = [CCLabel text:@"" size:14 weight:NSFontWeightSemibold role:CCRoleText];
+    row.detail = Muted(@"", 12.5);
+    row.detail.wraps = YES;
+    NSStackView *text = CCVStack(@[ row.title, row.detail ], 3);
+    Stretch(text, row.detail);
+    row.size = [CCLabel text:CCFormatBytes(process.rss) size:16 weight:NSFontWeightSemibold role:CCRoleText];
+    row.size.font = CCDigitsFont(16, NSFontWeightSemibold);
+    [row.size setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+    row.action = [CCButton buttonWithStyle:CCButtonGhost title:@"" symbol:@"xmark.octagon"];
+    row.action.padding = NSEdgeInsetsMake(8, 12, 8, 12);
+    row.action.fontSize = 12.5;
+    row.action.hidden = ![M() canTerminate:process];
+    __weak CCStuckRow *weak = row;
+    row.action.onClick = ^{ [M() terminateStuck:weak.process]; };
+    for (NSView *v in @[ tile, text, row.size, row.action ]) [row addSubview:v];
+    [NSLayoutConstraint activateConstraints:@[
+        [tile.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:16],
+        [tile.topAnchor constraintEqualToAnchor:row.topAnchor constant:14],
+        [text.leadingAnchor constraintEqualToAnchor:tile.trailingAnchor constant:14],
+        [text.topAnchor constraintGreaterThanOrEqualToAnchor:row.topAnchor constant:14],
+        [text.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+        [row.bottomAnchor constraintGreaterThanOrEqualToAnchor:text.bottomAnchor constant:14],
+        [row.bottomAnchor constraintGreaterThanOrEqualToAnchor:tile.bottomAnchor constant:14],
+        [row.size.leadingAnchor constraintEqualToAnchor:text.trailingAnchor constant:16],
+        [row.size.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+        [row.action.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+        [row.action.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-16],
+    ]];
+    NSLayoutConstraint *sizeToAction = [row.action.leadingAnchor constraintEqualToAnchor:row.size.trailingAnchor constant:16];
+    NSLayoutConstraint *sizeToEdge = [row.size.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-16];
+    sizeToAction.active = !row.action.hidden;
+    sizeToEdge.active = row.action.hidden;
+    [row refresh];
+    return row;
+}
+
+- (void)refresh {
+    CCStuckProcess *p = self.process;
+    NSString *key = [NSString stringWithFormat:@"stuck.%@", p.kindName];
+    self.title.stringValue = L([key stringByAppendingString:@".name"]);
+    NSString *command = p.commandLine.length > 90 ? [[p.commandLine substringToIndex:90] stringByAppendingString:@"…"] : p.commandLine;
+    self.detail.stringValue = LF([key stringByAppendingString:@".detail"], CCFormatCount((long long)p.minutes), CCFormatCount((long long)p.cpu), command);
+    self.detail.toolTip = p.commandLine;
+    self.action.title = L(@"stuck.terminate");
+}
+
+@end
+
+/// How the targets are picked: the app ticks Safe ones, or Safe and Moderate ones, by itself; or the user does.
+@interface CCSelectionRow : NSStackView
++ (instancetype)row;
+- (void)refresh;
+@end
+
+@implementation CCSelectionRow {
+    NSArray<CCChip *> *_chips;
+}
+
++ (instancetype)row {
+    CCSelectionRow *row = [self new];
+    row.translatesAutoresizingMaskIntoConstraints = NO;
+    row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    row.alignment = NSLayoutAttributeCenterY;
+    row.spacing = 6;
+    CCLabel *caption = Caption(L(@"dash.select"));
+    caption.locKey = @"dash.select";
+    [row addArrangedSubview:caption];
+    NSMutableArray *chips = [NSMutableArray array];
+    NSArray *keys = @[ @"dash.mode.safe", @"dash.mode.moderate", @"dash.mode.manual" ];
+    for (NSInteger mode = CCSelectionSafe; mode <= CCSelectionManual; mode++) {
+        CCChip *chip = [CCChip chipWithTitle:@""];
+        chip.locKey = keys[mode];
+        chip.toolTip = L([keys[mode] stringByAppendingString:@".tip"]);
+        chip.onClick = ^{ [M() setSelectionMode:(CCSelectionMode)mode]; };
+        [chips addObject:chip];
+        [row addArrangedSubview:chip];
+    }
+    row->_chips = chips;
+    CCButton *none = [CCButton buttonWithStyle:CCButtonSubtle title:nil symbol:nil];
+    none.locKey = @"dash.selectNone";
+    none.onClick = ^{ [M() selectNone]; };
+    [row addArrangedSubview:none];
+    [row refresh];
+    return row;
+}
+
+- (void)refresh {
+    CCSelectionMode mode = M().selectionMode;
+    for (NSUInteger i = 0; i < _chips.count; i++) {
+        _chips[i].checked = (NSInteger)i == mode;
+        _chips[i].toolTip = L([_chips[i].locKey stringByAppendingString:@".tip"]);
+    }
+}
+
+@end
+
 /// A card that says when it has been laid out (the hero decides there how its parts are arranged).
 @interface CCLayoutCard : CCCard
 @property (nonatomic, copy, nullable) void (^onLayout)(void);
@@ -295,12 +409,17 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
 
 @implementation CCDashboardPage {
     CCScrollPage *_scroll;
-    CCCard *_hero, *_largestCard, *_insightsCard;
+    CCCard *_hero, *_largestCard, *_insightsCard, *_stuckCard;
+    CCSelectionRow *_selection;
+    NSStackView *_stuckRows;
+    NSArray<CCStuckProcess *> *_shownStuck;
     NSView *_categoriesHeader;
     CCRing *_ring;
     CCCounter *_number, *_unit;
     CCLabel *_reclaimable, *_foundSoFar, *_status, *_current, *_modeText;
     CCIcon *_modeIcon;
+    CCLabel *_trashLine;
+    NSStackView *_trashRow;
     CCSegmentBar *_segments;
     NSStackView *_heroRight, *_heroSummary, *_grid;
     NSUInteger _gridColumns;
@@ -336,8 +455,11 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     _unit.duration = 900;
     NSStackView *value = CCHStack(@[ _number, _unit ], 6);
     value.alignment = NSLayoutAttributeLastBaseline;
+    // Set on every refresh: the share of the whole disk, or "reclaimable" until there is one.
     _reclaimable = Caption(L(@"dash.reclaimable"));
-    _reclaimable.locKey = @"dash.reclaimable";
+    _reclaimable.alignment = NSTextAlignmentCenter;
+    _reclaimable.wraps = YES;
+    _reclaimable.preferredMaxLayoutWidth = 140;
     _foundSoFar = Caption(L(@"dash.foundSoFar"));
     _foundSoFar.locKey = @"dash.foundSoFar";
     NSStackView *center = CCVStack(@[ value, _reclaimable, _foundSoFar ], 0);
@@ -376,12 +498,21 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
         [legendItems addObject:item];
     }
     [_legend setItems:legendItems];
-    NSStackView *summary = CCVStack(@[ title, _status, _current, _segments, _legend ], 0);
+    // The Trash: on its own line, it is not junk of any category.
+    CCIcon *trashIcon = [CCIcon symbol:@"trash" size:12.5 weight:NSFontWeightRegular role:CCRoleMuted];
+    _trashLine = Muted(@"", 12.5);
+    _trashLine.wraps = YES;
+    [trashIcon setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [_trashLine setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    _trashRow = CCHStack(@[ trashIcon, _trashLine ], 7);
+    _trashRow.alignment = NSLayoutAttributeTop;
+    NSStackView *summary = CCVStack(@[ title, _status, _current, _segments, _legend, _trashRow ], 0);
     [summary setCustomSpacing:6 afterView:title];
+    [summary setCustomSpacing:8 afterView:_legend];
     [summary setCustomSpacing:4 afterView:_status];
     [summary setCustomSpacing:24 afterView:_current];
     [summary setCustomSpacing:14 afterView:_segments];
-    for (NSView *v in @[ title, _status, _segments, _legend ]) Stretch(summary, v);
+    for (NSView *v in @[ title, _status, _segments, _legend, _trashRow ]) Stretch(summary, v);
 
     _scanButton = [CCButton buttonWithStyle:CCButtonPrimary title:@"" symbol:@"play"];
     _scanButton.onClick = ^{ [M() toggleScan]; };
@@ -389,6 +520,10 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     _cleanButton.onClick = ^{ [M() clean]; };
     _modeIcon = [CCIcon symbol:@"trash" size:12 weight:NSFontWeightRegular role:CCRoleFaint];
     _modeText = Caption(@"");
+    _modeText.wraps = YES;
+    _modeText.alignment = NSTextAlignmentCenter;
+    _modeText.preferredMaxLayoutWidth = 200;
+    [_modeIcon setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
     NSStackView *mode = CCHStack(@[ _modeIcon, _modeText ], 7);
     NSStackView *actions = CCVStack(@[ _scanButton, _cleanButton, mode ], 14);
     actions.alignment = NSLayoutAttributeCenterX;
@@ -444,12 +579,22 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     Stretch(insights, _insightRows);
     _insightsCard = Card(insights, NSEdgeInsetsMake(22, 24, 22, 24));
 
-    NSStackView *page = CCVStack(@[ _hero, _categoriesHeader, grid, _largestCard, _insightsCard ], 0);
+    // ── stuck processes ──
+    _stuckRows = CCVStack(@[], 8);
+    CCLabel *stuckSubtitle = Muted(L(@"stuck.subtitle"), 12.5);
+    stuckSubtitle.locKey = @"stuck.subtitle";
+    NSStackView *stuck = CCVStack(@[ H2(@"stuck.title"), stuckSubtitle, _stuckRows ], 4);
+    [stuck setCustomSpacing:12 afterView:stuckSubtitle];
+    Stretch(stuck, _stuckRows);
+    _stuckCard = Card(stuck, NSEdgeInsetsMake(22, 24, 22, 24));
+
+    NSStackView *page = CCVStack(@[ _hero, _stuckCard, _categoriesHeader, grid, _largestCard, _insightsCard ], 0);
     [page setCustomSpacing:30 afterView:_hero];
+    [page setCustomSpacing:30 afterView:_stuckCard];
     [page setCustomSpacing:12 afterView:_categoriesHeader];
     [page setCustomSpacing:22 afterView:grid];
     [page setCustomSpacing:16 afterView:_largestCard];
-    for (NSView *v in @[ _hero, grid, _largestCard, _insightsCard ]) Stretch(page, v);
+    for (NSView *v in @[ _hero, _stuckCard, grid, _largestCard, _insightsCard ]) Stretch(page, v);
     [_categoriesHeader.leadingAnchor constraintEqualToAnchor:page.leadingAnchor constant:4].active = YES;
     [_categoriesHeader.trailingAnchor constraintEqualToAnchor:page.trailingAnchor constant:-4].active = YES;
 
@@ -469,6 +614,7 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     ]];
     _largestCard.hidden = YES;
     _insightsCard.hidden = YES;
+    _stuckCard.hidden = YES;
 }
 
 // The ring (204), the summary and the buttons (220) need about 860 pt side by side; in a narrower window the summary
@@ -506,20 +652,8 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
 }
 
 - (NSView *)selectButtons {
-    CCLabel *select = Caption(L(@"dash.select"));
-    select.locKey = @"dash.select";
-    CCButton *safe = [CCButton buttonWithStyle:CCButtonSubtle title:nil symbol:nil];
-    safe.locKey = @"dash.selectSafe";
-    safe.onClick = ^{ [M() selectSafe]; };
-    CCButton *all = [CCButton buttonWithStyle:CCButtonSubtle title:nil symbol:nil];
-    all.locKey = @"dash.selectAll";
-    all.onClick = ^{ [M() selectAll]; };
-    CCButton *none = [CCButton buttonWithStyle:CCButtonSubtle title:nil symbol:nil];
-    none.locKey = @"dash.selectNone";
-    none.onClick = ^{ [M() selectNone]; };
-    NSStackView *s = CCHStack(@[ select, safe, all, none ], 0);
-    [s setCustomSpacing:4 afterView:select];
-    return s;
+    _selection = [CCSelectionRow row];
+    return _selection;
 }
 
 - (void)refresh {
@@ -531,6 +665,9 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     _number.bytes = m.displayBytes;
     _unit.bytes = m.displayBytes;
     _reclaimable.hidden = scanning;
+    _reclaimable.stringValue = m.ringCaption;
+    _trashLine.stringValue = m.trashLine;
+    _trashRow.hidden = !m.showsTrashLine;
     _foundSoFar.hidden = !scanning;
     _status.stringValue = m.statusText;
     _current.stringValue = m.currentTargetName;
@@ -550,13 +687,17 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
 
     _scanButton.title = scanning ? L(@"dash.stop") : m.hasResults ? L(@"dash.rescan") : L(@"dash.scan");
     _scanButton.symbol = scanning ? @"stop" : @"play";
-    _cleanButton.title = m.selectedBytes > 0 ? LF(@"dash.clean", CCFormatBytes(m.selectedBytes)) : L(@"dash.cleanEmpty");
+    long long cleanable = m.cleanableBytes;
+    _cleanButton.title = cleanable <= 0 ? L(@"dash.cleanEmpty")
+        : m.onlyTrashLeft ? LF(@"dash.emptyBin", CCFormatBytes(cleanable))
+        : LF(@"dash.clean", CCFormatBytes(cleanable));
     _cleanButton.enabled = m.canClean;
     _cleanButton.pulsing = m.canClean;
-    _modeText.stringValue = m.settings.useTrash ? L(@"dash.modeRecycle") : L(@"dash.modePermanent");
-    _modeIcon.symbol = m.settings.useTrash ? @"trash" : @"flame";
+    _modeText.stringValue = L(@"dash.modeCaches");
+    _modeIcon.symbol = @"sparkles";
 
     for (CCCategoryCard *card in _categoryCards) [card refresh];
+    [_selection refresh];
 
     // Largest targets: rebuilt when the set changes, replayed when results arrive.
     BOOL showLargest = m.hasResults;
@@ -577,6 +718,20 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
         Stagger(_largestRows.arrangedSubviews, 50, 0);
     }
     _hadResults = showLargest;
+
+    if (![_shownStuck isEqualToArray:m.stuckProcesses]) {
+        _shownStuck = m.stuckProcesses;
+        for (NSView *v in [_stuckRows.arrangedSubviews copy]) [v removeFromSuperview];
+        for (CCStuckProcess *p in m.stuckProcesses) {
+            CCStuckRow *row = [CCStuckRow rowFor:p];
+            [_stuckRows addArrangedSubview:row];
+            Stretch(_stuckRows, row);
+        }
+    }
+    for (CCStuckRow *row in _stuckRows.arrangedSubviews) [row refresh];
+    BOOL showStuck = m.stuckProcesses.count > 0;
+    if (showStuck && _stuckCard.hidden) CCEntrance(_stuckCard, 0, 18);
+    _stuckCard.hidden = !showStuck;
 
     BOOL showInsights = m.insights.count > 0;
     if (![_shownInsights isEqualToArray:m.insights]) {
@@ -890,19 +1045,7 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
         [_chips addObject:chip];
     }
     NSStackView *chips = CCHStack(_chips, 8);
-    CCLabel *select = Caption(L(@"dash.select"));
-    select.locKey = @"dash.select";
-    NSMutableArray *buttons = [NSMutableArray arrayWithObject:select];
-    NSArray *keys = @[ @"dash.selectSafe", @"dash.selectAll", @"dash.selectNone" ];
-    NSArray *actions = @[ ^{ [M() selectSafe]; }, ^{ [M() selectAll]; }, ^{ [M() selectNone]; } ];
-    for (NSUInteger i = 0; i < 3; i++) {
-        CCButton *b = [CCButton buttonWithStyle:CCButtonSubtle title:nil symbol:nil];
-        b.locKey = keys[i];
-        b.onClick = actions[i];
-        [buttons addObject:b];
-    }
-    NSStackView *selectRow = CCHStack(buttons, 0);
-    [selectRow setCustomSpacing:4 afterView:select];
+    CCSelectionRow *selectRow = [CCSelectionRow row];
     _filterSpacer = CCSpacer();
     NSStackView *filterRow = CCHStack(@[ chips, _filterSpacer, selectRow ], 12);
     _filterRow = filterRow;
@@ -969,6 +1112,7 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     [self syncRows];
     _subtitle.stringValue = LF(@"targets.subtitle", @(m.presentCount), @(m.selectedCount), CCFormatBytes(m.selectedBytes));
     for (NSUInteger i = 0; i < _chips.count; i++) _chips[i].checked = [_filters[i] isEqualToString:m.filter];
+    [(CCSelectionRow *)_selectRow refresh];
 
     BOOL filterChanged = ![_shownFilter isEqualToString:m.filter] || ![_shownSearch isEqualToString:m.searchText];
     _shownFilter = m.filter;
@@ -1249,7 +1393,7 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     if (_confirmClean.on != s.confirmClean) [_confirmClean setOn:s.confirmClean animated:self.window != nil];
     if (_diskWithScan.on != s.measureDiskWithScan) [_diskWithScan setOn:s.measureDiskWithScan animated:self.window != nil];
     _deleteRow.titleLabel.stringValue = L(s.useTrash ? @"settings.deleteMode.recycle" : @"settings.deleteMode.permanent");
-    _deleteRow.descLabel.stringValue = L(s.useTrash ? @"settings.deleteMode.recycle.desc" : @"settings.deleteMode.permanent.desc");
+    _deleteRow.descLabel.stringValue = L(s.useTrash ? @"settings.deleteMode.recycle.descWin" : @"settings.deleteMode.permanent.descWin");
 
     NSArray *hours = @[ @0, @6, @24, @72, @168 ];
     NSArray *titles = @[ L(@"settings.skipRecent.off"), LF(@"settings.hours", @6), LF(@"settings.hours", @24), LF(@"settings.days", @3), LF(@"settings.days", @7) ];
@@ -1316,7 +1460,8 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     description.lineHeight = 22;
     [description.widthAnchor constraintLessThanOrEqualToConstant:580].active = YES;
     NSLayoutConstraint *descriptionWidth = [description.widthAnchor constraintEqualToConstant:580];
-    descriptionWidth.priority = NSLayoutPriorityDefaultHigh - 1;
+    // Below a drag of the window edge: a narrow window wraps it into more lines instead of staying wide.
+    descriptionWidth.priority = NSLayoutPriorityDragThatCanResizeWindow - 20;
     descriptionWidth.active = YES;
 
     CCButton *github = [CCButton buttonWithStyle:CCButtonPrimary title:nil symbol:@"chevron.left.forwardslash.chevron.right"];
@@ -1770,7 +1915,8 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     _cancel.hidden = [okText isEqualToString:L(@"common.ok")];
     _tile.fill = ^NSColor *{ return danger ? CCTheme.dangerSoft : CCTheme.accentSoft; };
     _tile.icon.role = danger ? CCRoleDanger : CCRoleAccent;
-    _tile.icon.symbol = [okText isEqualToString:L(@"common.ok")] ? @"info.circle" : @"trash";
+    _tile.icon.symbol = [okText isEqualToString:L(@"common.ok")] ? @"info.circle" : CCModel.shared.confirmSymbol ?: @"trash";
+    CCModel.shared.confirmSymbol = nil;
     self.hidden = NO;
     [self.window makeFirstResponder:self];
     if (!CCMotionEnabled()) return;
@@ -2154,6 +2300,7 @@ static void EntryLook(CCEntry *e, NSString **symbol, NSColor **color) {
 @implementation CCToast {
     CCIconTile *_tile;
     CCLabel *_text;
+    NSLayoutConstraint *_textWidth;
     NSTimer *_timer;
 }
 
@@ -2171,7 +2318,10 @@ static void EntryLook(CCEntry *e, NSString **symbol, NSColor **color) {
         _tile.icon.role = CCRoleSuccess;
         _text = [CCLabel text:@"" size:13.5 weight:NSFontWeightSemibold role:CCRoleText];
         _text.wraps = YES;
-        [_text.widthAnchor constraintLessThanOrEqualToConstant:420].active = YES;
+        // As wide as its text up to the limit (see -showSymbol:text:): a wrapping label left to itself shrinks to a few
+        // letters a line.
+        _textWidth = [_text.widthAnchor constraintEqualToConstant:420];
+        _textWidth.active = YES;
         _text.preferredMaxLayoutWidth = 420;
         NSStackView *row = CCHStack(@[ _tile, _text ], 12);
         [self addSubview:row];
@@ -2185,6 +2335,9 @@ static void EntryLook(CCEntry *e, NSString **symbol, NSColor **color) {
 - (void)showSymbol:(NSString *)symbol text:(NSString *)text {
     _tile.icon.symbol = symbol;
     _text.stringValue = text;
+    CGFloat width = MIN(420, ceil([text sizeWithAttributes:@{ NSFontAttributeName: _text.font }].width) + 6);
+    _textWidth.constant = width;
+    _text.preferredMaxLayoutWidth = width;
     self.hidden = NO;
     if (CCMotionEnabled()) {
         CCWithoutAnimation(^{ self.layer.opacity = 0; });

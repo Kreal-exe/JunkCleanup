@@ -28,12 +28,21 @@ static BOOL HasFullDiskAccess(void) {
     if ((self = [super init])) {
         _target = target;
         _identifier = target.identifier;
-        _roots = [target resolveRoots];
+        // Targets found by looking at processes or walking whole folders are found by the first scan, off the main thread.
+        _roots = target.finder || target.idleDays > 0 ? @[] : [target resolveRoots];
         _isPresent = _roots.count > 0;
         _enabled = enabled && _isPresent;
         _topEntries = @[];
     }
     return self;
+}
+
+- (void)refreshPresence { [self applyRoots:[self.target resolveRoots]]; }
+
+- (void)applyRoots:(NSArray<NSString *> *)roots {
+    _roots = [roots copy];
+    _isPresent = _roots.count > 0;
+    if (!_isPresent) _enabled = NO;
 }
 
 - (NSString *)name { return self.target.displayName ?: L(self.target.nameKey); }
@@ -56,7 +65,10 @@ static BOOL HasFullDiskAccess(void) {
         case CCTargetScanning: return L(@"targets.scanning");
         case CCTargetDenied: return L(@"targets.needsAdmin");
         case CCTargetError: return LF(@"targets.error", self.error ?: @"");
-        case CCTargetDone: return self.bytes == 0 ? L(@"targets.empty") : @"";
+        case CCTargetDone:
+            if (self.target.sharesBlocks && self.lastResult.sharedBytes > 0 && self.fileCount > 0)
+                return LF(@"targets.shared", CCFormatBytes(self.lastResult.sharedBytes));
+            return self.bytes == 0 ? L(@"targets.empty") : @"";
         case CCTargetIdle: return self.isPresent ? L(@"targets.notScanned") : L(@"targets.notPresent");
     }
     return @"";
@@ -71,7 +83,10 @@ static BOOL HasFullDiskAccess(void) {
     self.topEntries = @[];
 }
 
+- (BOOL)isTrash { return self.target.alwaysPermanent; }
+
 - (void)applyResult:(CCScanResult *)result {
+    _hasLeftovers = NO;
     self.lastResult = result;
     if (result.roots.count) self.roots = result.roots;
     self.bytes = result.totalBytes;
@@ -85,6 +100,7 @@ static BOOL HasFullDiskAccess(void) {
 }
 
 - (void)applyClean:(CCTargetCleanResult *)clean {
+    _hasLeftovers = clean.bytesRemaining > 0;
     self.bytes = clean.bytesRemaining;
     self.fileCount = clean.filesRemaining;
     self.topEntries = @[];
@@ -125,7 +141,8 @@ static BOOL HasFullDiskAccess(void) {
     NSInteger present = 0;
     BOOL anyEnabled = NO;
     for (CCTargetItem *t in self.targets) {
-        if (!t.isPresent) continue;
+        // The Trash is shown on its own line of the dashboard, not as junk of its category.
+        if (!t.isPresent || t.isTrash) continue;
         present++;
         bytes += t.bytes;
         files += t.fileCount;
@@ -150,6 +167,7 @@ static BOOL HasFullDiskAccess(void) {
 @property (nonatomic, readwrite) BOOL scanning, hasResults, nothingFound, overlayVisible, cleaning, cleanDone, cleanStopping, hasFullDiskAccess;
 @property (nonatomic, readwrite) NSString *statusText, *currentTargetName, *cleanCurrent, *cleanSummary, *diskName;
 @property (nonatomic, readwrite) long long displayBytes, foundBytes, selectedBytes, diskUsed, diskTotal, diskFree, lifetimeFreed, cleanFreed;
+@property (nonatomic, readwrite) long long trashBytes;
 @property (nonatomic, readwrite) NSInteger selectedCount, presentCount;
 @property (nonatomic, readwrite) double ringAngle, cleanProgress;
 @end
@@ -159,9 +177,12 @@ static BOOL HasFullDiskAccess(void) {
     NSMutableArray<CCCategoryItem *> *_categories;
     NSArray<CCTargetItem *> *_topTargets;
     NSArray<CCInsight *> *_insights;
+    NSArray<CCStuckProcess *> *_stuck;
     NSMutableArray<CCCleanLogItem *> *_cleanLog;
     CCCancelToken *_scanToken;
     CCCancelToken *_cleanToken;
+    /// A Disk page Clean waiting for the scan it started: the targets to offer (empty: all the Disk page counts).
+    NSArray<NSString *> *_pendingDiskClean;
     /// Bytes found so far per target while scanning, so the counter only adds up selected targets.
     NSMutableDictionary<NSString *, NSNumber *> *_liveBytes;
     NSString *(^_status)(void);
@@ -186,6 +207,7 @@ static BOOL HasFullDiskAccess(void) {
         _cleanLog = [NSMutableArray array];
         _topTargets = @[];
         _insights = @[];
+        _stuck = @[];
         _searchText = @"";
         _filter = @"All";
         _statusText = @"";
@@ -218,11 +240,96 @@ static BOOL HasFullDiskAccess(void) {
 - (NSArray<CCCategoryItem *> *)categories { return _categories; }
 - (NSArray<CCTargetItem *> *)topTargets { return _topTargets; }
 - (NSArray<CCInsight *> *)insights { return _insights; }
+- (NSArray<CCStuckProcess *> *)stuckProcesses { return _stuck; }
 - (NSArray<CCCleanLogItem *> *)cleanLog { return _cleanLog; }
 
-- (CCTargetItem *)itemForTarget:(CCTarget *)target {
+- (CCSelectionMode)selectionMode { return CCSelectionModeFromName(self.settings.selectionMode); }
+
+/// The tick a target gets in the current mode: from its risk, or what was set by hand.
+- (BOOL)tickFor:(CCTarget *)target {
+    if (self.selectionMode != CCSelectionManual) return CCAutoSelects(target, self.selectionMode);
     NSNumber *saved = self.settings.targetStates[target.identifier];
-    return [[CCTargetItem alloc] initWithTarget:target enabled:saved ? saved.boolValue : target.enabledByDefault];
+    // A target never ticked or unticked by hand (one added in a later version) gets what Safe mode would give it.
+    return saved ? saved.boolValue : CCAutoSelects(target, CCSelectionSafe);
+}
+
+- (CCTargetItem *)itemForTarget:(CCTarget *)target {
+    return [[CCTargetItem alloc] initWithTarget:target enabled:[self tickFor:target]];
+}
+
+- (void)applySelection {
+    for (CCTargetItem *t in _targets) t.enabled = t.isPresent && [self tickFor:t.target];
+}
+
+- (void)setSelectionMode:(CCSelectionMode)mode {
+    self.settings.selectionMode = CCSelectionModeName(mode);
+    [self applySelection];
+    [self saveSettings];
+    [self recalc];
+    [self changed];
+}
+
+/// Before a change by hand: what the app picked becomes the starting point of the user's own choice.
+- (void)leaveAutoSelection {
+    CCSelectionMode mode = self.selectionMode;
+    if (mode == CCSelectionManual) return;
+    for (CCTargetItem *t in _targets)
+        self.settings.targetStates[t.identifier] = @(t.isPresent ? t.enabled : CCAutoSelects(t.target, mode));
+    self.settings.selectionMode = CCSelectionModeName(CCSelectionManual);
+}
+
+- (void)includeTarget:(NSString *)identifier {
+    CCTargetItem *item = [self itemWithId:identifier];
+    if (!item) return;
+    if (!item.isPresent) [item refreshPresence];
+    if (!item.isPresent || item.enabled) return;
+    if (self.selectionMode != CCSelectionManual && CCAutoSelects(item.target, self.selectionMode)) {
+        // It turned up after the mode last picked: the mode picks it, no need to leave it.
+        item.enabled = YES;
+        [self recalc];
+        [self changed];
+        return;
+    }
+    [self setTarget:item enabled:YES];
+}
+
+- (BOOL)hasSomething:(CCTargetItem *)t {
+    return t.bytes > 0 || (t.target.sharesBlocks && t.fileCount > 0);
+}
+
+- (NSArray<CCTargetItem *> *)diskCleanable {
+    NSMutableArray<CCTargetItem *> *list = [NSMutableArray array];
+    for (CCTargetItem *t in _targets)
+        if (t.isPresent && t.lastResult && !t.hasLeftovers && [self hasSomething:t] && !t.isTrash && t.target.risk != CCRiskCareful)
+            [list addObject:t];
+    return list;
+}
+
+- (long long)diskCleanableBytes {
+    long long sum = 0;
+    for (CCTargetItem *t in self.diskCleanable) sum += t.bytes;
+    return sum;
+}
+
+- (void)cleanFromDisk:(NSString *)targetId {
+    if (self.cleaning) return;
+    self.page = CCPageTargets;
+    CCTargetItem *item = targetId ? [self itemWithId:targetId] : nil;
+    if (item && !item.isPresent) [item refreshPresence];
+    if (self.scanning || !self.hasResults || (item && !item.lastResult)) {
+        _pendingDiskClean = targetId ? @[ targetId ] : @[];
+        if (!self.scanning) [self startScan];
+        return;
+    }
+    NSArray<CCTargetItem *> *items = item ? @[ item ] : self.diskCleanable;
+    NSMutableArray<CCTargetItem *> *offer = [NSMutableArray array];
+    for (CCTargetItem *t in items) {
+        [self includeTarget:t.identifier];
+        if (t.enabled && t.lastResult && !t.hasLeftovers && [self hasSomething:t]) [offer addObject:t];
+    }
+    [self recalc];
+    [self changed];
+    if (offer.count) [self cleanItems:offer];
 }
 
 - (void)rebuildCategories {
@@ -276,7 +383,49 @@ static BOOL HasFullDiskAccess(void) {
         || [t.rootsText rangeOfString:q options:o].location != NSNotFound;
 }
 
-- (BOOL)canClean { return self.hasResults && !self.scanning && !self.cleaning && self.selectedBytes > 0; }
+/// Selected targets with something in them. What a clean could not remove is left out until the next scan: pressing
+/// Clean again would not remove it either.
+- (NSArray<CCTargetItem *> *)selectable {
+    NSMutableArray<CCTargetItem *> *list = [NSMutableArray array];
+    for (CCTargetItem *t in _targets) {
+        // Clones that share all their blocks free nothing today, but they are still junk: removed with the rest.
+        BOOL hasSomething = t.bytes > 0 || (t.target.sharesBlocks && t.fileCount > 0);
+        if (t.isPresent && t.enabled && t.lastResult && hasSomething && !t.hasLeftovers) [list addObject:t];
+    }
+    return list;
+}
+
+- (long long)cleanableBytes {
+    long long sum = 0;
+    for (CCTargetItem *t in [self selectable]) sum += t.bytes;
+    return sum;
+}
+
+- (BOOL)onlyTrashLeft {
+    NSArray<CCTargetItem *> *list = [self selectable];
+    if (list.count == 0) return NO;
+    for (CCTargetItem *t in list)
+        if (!t.isTrash) return NO;
+    return YES;
+}
+
+- (BOOL)showsTrashLine { return self.trashBytes > 0 && !(self.onlyTrashLeft && !self.scanning); }
+
+- (NSString *)trashLine {
+    for (CCTargetItem *t in _targets)
+        if (t.isTrash && t.enabled) return [NSString stringWithFormat:@"%@: %@", t.name, CCFormatBytes(self.trashBytes)];
+    return LF(@"dash.binLine", CCFormatBytes(self.trashBytes));
+}
+
+- (NSString *)ringCaption {
+    if (self.scanning || self.diskTotal <= 0 || self.displayBytes <= 0) return L(@"dash.reclaimable");
+    double percent = 100.0 * self.displayBytes / self.diskTotal;
+    NSString *share = percent < 0.1 ? @"<0.1%" : percent < 10 ? [CCFormatDecimal(percent) stringByAppendingString:@"%"] : [NSString stringWithFormat:@"%.0f%%", percent];
+    NSString *caption = LF(@"dash.ofDisk", share, CCFormatBytes(self.diskTotal));
+    return self.onlyTrashLeft ? [NSString stringWithFormat:@"%@ · %@", caption, L(@"dash.inBin")] : caption;
+}
+
+- (BOOL)canClean { return self.hasResults && !self.scanning && !self.cleaning && [self selectable].count > 0; }
 
 // ───────────── scanning ─────────────
 
@@ -298,12 +447,36 @@ static BOOL HasFullDiskAccess(void) {
     self.displayBytes = 0;
     [_liveBytes removeAllObjects];
     _scanCompleted = 0;
+    __weak CCModel *weakSelf = self;
+    [self setStatus:^NSString *{ return L(@"targets.scanning"); }];
+    [self post:CCModelScanStateNotification];
+    [self changed];
+    // What is there to scan: some targets look at processes or walk whole folders to know, so off the main thread.
+    NSArray<CCTargetItem *> *items = [_targets copy];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSMutableArray *roots = [NSMutableArray array];
+        for (CCTargetItem *t in items) [roots addObject:[t.target resolveRoots]];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            CCModel *s = weakSelf;
+            if (!s || token != s->_scanToken) return;
+            if (token.isCancelled) {
+                [s finishScan:token seconds:0 count:0];
+                return;
+            }
+            for (NSUInteger i = 0; i < items.count; i++) [items[i] applyRoots:roots[i]];
+            [s beginScan:token];
+        });
+    });
+}
+
+- (void)beginScan:(CCCancelToken *)token {
     NSMutableArray<CCTarget *> *targets = [NSMutableArray array];
     NSMutableSet<NSString *> *allRoots = [NSMutableSet set];
+    [self applySelection];
     for (CCTargetItem *t in _targets) {
         [t resetForScan];
         if (t.isPresent) [targets addObject:t.target];
-        [allRoots addObjectsFromArray:[t.target resolveRoots]];
+        [allRoots addObjectsFromArray:t.roots];
     }
     _scanTotal = (NSInteger)targets.count;
     self.currentTargetName = @"";
@@ -340,6 +513,7 @@ static BOOL HasFullDiskAccess(void) {
     if (!self.scanning) return;
     if (event.phase != CCScanPhaseStarted) _liveBytes[event.targetId] = @(event.targetBytes);
     self.displayBytes = [self selectedLiveBytes];
+    [self updateRingAngle];
     _scanCompleted = MAX(_scanCompleted, event.completed);
     self.statusText = _status();
     CCTargetItem *item = [self itemWithId:event.targetId];
@@ -369,30 +543,39 @@ static BOOL HasFullDiskAccess(void) {
         [self setStatus:^NSString *{ return LF(@"dash.lastScan", @(count), CCFormatDecimal(seconds), CCFormatCount(files)); }];
     }
     [self post:CCModelScanStateNotification];
+    if (!cancelled) [self refreshInsights];
     [self changed];
+    NSArray<NSString *> *pending = _pendingDiskClean;
+    _pendingDiskClean = nil;
+    if (pending && !cancelled)
+        dispatch_async(dispatch_get_main_queue(), ^{ [self cleanFromDisk:pending.firstObject]; });
 }
 
 // ───────────── cleaning ─────────────
 
 - (void)clean {
+    [self cleanItems:[self selectable]];
+}
+
+- (void)cleanItems:(NSArray<CCTargetItem *> *)selected {
     if (self.scanning || self.cleaning) return;
-    NSMutableArray<CCTargetItem *> *selected = [NSMutableArray array];
-    long long bytes = 0, files = 0;
-    for (CCTargetItem *t in _targets) {
-        if (t.enabled && t.lastResult && t.bytes > 0) {
-            [selected addObject:t];
-            bytes += t.bytes;
-            files += t.fileCount;
-        }
-    }
     if (selected.count == 0) return;
-    BOOL trash = self.settings.useTrash;
-    NSString *title = LF(@"clean.confirmTitle", CCFormatBytes(bytes));
-    NSString *body = LF(trash ? @"clean.confirmRecycle" : @"clean.confirmPermanent", CCFormatCount(files), @(selected.count));
+    long long bytes = 0, files = 0;
+    for (CCTargetItem *t in selected) {
+        bytes += t.bytes;
+        files += t.fileCount;
+    }
+    // Caches and temporary files are deleted for good, like every cleaner does: apps rebuild them, and in the Trash they
+    // would free nothing. The Trash setting is for what is removed by hand.
+    BOOL emptyingTrash = YES;
+    for (CCTargetItem *t in selected)
+        if (!t.isTrash) emptyingTrash = NO;
+    NSString *title = LF(emptyingTrash ? @"clean.binTitle" : @"clean.confirmTitle", CCFormatBytes(bytes));
+    NSString *body = emptyingTrash ? LF(@"clean.binBody", CCFormatCount(files)) : LF(@"clean.confirmPermanent", CCFormatCount(files), @(selected.count));
     void (^go)(BOOL) = ^(BOOL ok) {
-        if (ok) [self runClean:selected trash:trash];
+        if (ok) [self runClean:selected trash:NO];
     };
-    if (self.confirm && self.settings.confirmClean) self.confirm(title, body, L(@"clean.confirm"), !trash, go);
+    if (self.confirm && self.settings.confirmClean) self.confirm(title, body, L(emptyingTrash ? @"clean.binConfirm" : @"clean.confirm"), emptyingTrash, go);
     else go(YES);
 }
 
@@ -485,9 +668,11 @@ static BOOL HasFullDiskAccess(void) {
 // ───────────── selection ─────────────
 
 - (void)bulkSelect:(BOOL (^)(CCTargetItem *t))predicate {
+    [self leaveAutoSelection];
     for (CCTargetItem *t in _targets) {
         t.enabled = t.isPresent && predicate(t);
-        self.settings.targetStates[t.identifier] = @(t.enabled);
+        // What is not there keeps its saved tick, for when it turns up.
+        if (t.isPresent) self.settings.targetStates[t.identifier] = @(t.enabled);
     }
     [self saveSettings];
     [self recalc];
@@ -501,14 +686,10 @@ static BOOL HasFullDiskAccess(void) {
     return sum;
 }
 
-- (void)selectSafe {
-    [self bulkSelect:^BOOL(CCTargetItem *t) { return t.target.risk == CCRiskSafe && !t.target.alwaysPermanent; }];
-}
-// All means every target found, Careful ones too; the category switches still leave Careful ones to be ticked by hand.
-- (void)selectAll { [self bulkSelect:^BOOL(CCTargetItem *t) { return YES; }]; }
 - (void)selectNone { [self bulkSelect:^BOOL(CCTargetItem *t) { return NO; }]; }
 
 - (void)setTarget:(CCTargetItem *)target enabled:(BOOL)enabled {
+    [self leaveAutoSelection];
     target.enabled = enabled && target.isPresent;
     self.settings.targetStates[target.identifier] = @(target.enabled);
     [self saveSettings];
@@ -584,13 +765,19 @@ static BOOL HasFullDiskAccess(void) {
     });
 }
 
+/// The ring is the share of the whole disk, live while scanning; a sliver stays visible however small the share.
+- (void)updateRingAngle {
+    self.ringAngle = self.diskTotal > 0 && self.displayBytes > 0 ? MAX(4, 360.0 * self.displayBytes / self.diskTotal) : 0;
+}
+
 - (void)recalc {
-    long long found = 0, selectedBytes = 0, maxBytes = 0;
+    long long found = 0, selectedBytes = 0, maxBytes = 0, trash = 0;
     NSInteger selected = 0, present = 0;
     for (CCTargetItem *t in _targets) {
         if (!t.isPresent) continue;
         present++;
         found += t.bytes;
+        if (t.isTrash) trash += t.bytes;
         maxBytes = MAX(maxBytes, t.bytes);
         if (t.enabled) {
             selected++;
@@ -601,9 +788,10 @@ static BOOL HasFullDiskAccess(void) {
     self.selectedBytes = selectedBytes;
     self.selectedCount = selected;
     self.presentCount = present;
-    for (CCCategoryItem *c in _categories) [c recalc:found];
-    self.displayBytes = self.scanning ? [self selectedLiveBytes] : selectedBytes;
-    self.ringAngle = found > 0 ? 360.0 * selectedBytes / found : 0;
+    self.trashBytes = trash;
+    for (CCCategoryItem *c in _categories) [c recalc:found - trash];
+    self.displayBytes = self.scanning ? [self selectedLiveBytes] : self.cleanableBytes;
+    [self updateRingAngle];
     for (CCTargetItem *t in _targets) t.share = maxBytes > 0 ? (double)t.bytes / maxBytes : 0;
 
     NSArray *present6 = [[_targets filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"isPresent == YES AND bytes > 0"]]
@@ -645,14 +833,26 @@ static BOOL HasFullDiskAccess(void) {
     [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"]];
 }
 
+- (void)askForFullDiskAccessDeclined:(void (^)(void))declined {
+    [self refreshAccess];
+    if (self.hasFullDiskAccess || !self.confirm) return;
+    self.confirmSymbol = @"lock.shield";
+    self.confirm(L(@"access.ask.title"), L(@"access.ask.body"), L(@"titlebar.runAsAdmin"), NO, ^(BOOL ok) {
+        if (ok) [self openFullDiskAccessSettings];
+        else if (declined) declined();
+    });
+}
+
 - (void)refreshInsights {
     BOOL trashEnabled = NO;
     for (CCTargetItem *t in _targets)
         if (t.target.alwaysPermanent && t.enabled) trashEnabled = YES;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSArray *found = [CCInsights scanWithTrashTargetEnabled:trashEnabled];
+        NSArray *stuck = [CCProcesses stuckIn:[CCProcesses snapshot] hermesIdleMinutes:[CCProcesses hermesIdleMinutes]];
         dispatch_async(dispatch_get_main_queue(), ^{
             self->_insights = found;
+            self->_stuck = stuck;
             [self post:CCModelInsightsNotification];
             [self changed];
         });
@@ -667,6 +867,34 @@ static BOOL HasFullDiskAccess(void) {
                                                         userInfo:@{ @"symbol": @"doc.on.doc", @"text": LF(@"insight.copied", insight.payload) }];
     } else if (insight.action == CCInsightActionOpenURL && insight.payload) {
         [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:insight.payload]];
+    }
+}
+
+- (BOOL)canTerminate:(CCStuckProcess *)process {
+    return process.kind != CCStuckHermesTab || [CCProcesses hermesStopScript] != nil;
+}
+
+- (void)terminateStuck:(CCStuckProcess *)process {
+    if (![self canTerminate:process]) return;
+    NSString *what = L([NSString stringWithFormat:@"stuck.%@.name", process.kindName]);
+    void (^go)(BOOL) = ^(BOOL ok) {
+        if (!ok) return;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            // Hermes' Chrome is closed by its own script, which waits for whoever is using it; a tab is never killed.
+            if (process.kind == CCStuckHermesTab) [CCProcesses stopHermesBecause:@"JunkCleanup: Hermes tab is stuck"];
+            else [CCProcesses terminateIfUnchanged:process];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [NSNotificationCenter.defaultCenter postNotificationName:CCModelToastNotification object:self
+                                                                userInfo:@{ @"symbol": @"checkmark", @"text": LF(@"stuck.done", what) }];
+                [self refreshInsights];
+            });
+        });
+    };
+    if (self.confirm) {
+        self.confirmSymbol = @"xmark.octagon";
+        self.confirm(LF(@"stuck.confirmTitle", what), L([NSString stringWithFormat:@"stuck.%@.confirm", process.kindName]), L(@"stuck.terminate"), YES, go);
+    } else {
+        go(YES);
     }
 }
 
@@ -719,7 +947,7 @@ static BOOL HasFullDiskAccess(void) {
     self.settings.windowWidth = width;
     self.settings.windowHeight = height;
     self.settings.lifetimeBytesFreed = lifetime;
-    for (CCTargetItem *t in _targets) t.enabled = t.target.enabledByDefault && t.isPresent;
+    [self applySelection];
     _suppressSave = NO;
     [self saveSettings];
     [self recalc];

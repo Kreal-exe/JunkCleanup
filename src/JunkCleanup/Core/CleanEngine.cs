@@ -261,6 +261,17 @@ public sealed class CleanEngine
             {
                 if (ct.IsCancellationRequested) break;
                 PruneEmptyDirectories(root, ct);
+                if (scan.Target.RemovesRoots && !options.DryRun)
+                {
+                    try
+                    {
+                        if (!Directory.EnumerateFileSystemEntries(root).Any()) Directory.Delete(root, false);
+                    }
+                    catch
+                    {
+                        // in use; an empty folder is harmless
+                    }
+                }
             }
         }
         catch (Exception ex)

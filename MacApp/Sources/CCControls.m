@@ -82,6 +82,8 @@ BOOL CCLayerYDown(CALayer *layer) {
 
 @implementation CCLabel
 
+static const NSLayoutPriority CCLabelKeepsWidth = NSLayoutPriorityDragThatCanResizeWindow - 10;
+
 + (instancetype)text:(NSString *)text size:(CGFloat)size weight:(NSFontWeight)weight role:(CCRole)role {
     CCLabel *l = [[self alloc] initWithFrame:NSZeroRect];
     l.translatesAutoresizingMaskIntoConstraints = NO;
@@ -96,7 +98,9 @@ BOOL CCLayerYDown(CALayer *layer) {
     l.font = CCFont(size, weight);
     l.role = role;
     l.stringValue = text ?: @"";
-    [l setContentCompressionResistancePriority:NSLayoutPriorityDefaultHigh forOrientation:NSLayoutConstraintOrientationHorizontal];
+    // Just under the priority of dragging the window's edge: a narrow window cuts a long line with "…" instead of
+    // refusing to get narrower. Still above everything that only fills space, so it never gives way to a spacer.
+    [l setContentCompressionResistancePriority:CCLabelKeepsWidth forOrientation:NSLayoutConstraintOrientationHorizontal];
     [l setContentHuggingPriority:NSLayoutPriorityDefaultHigh forOrientation:NSLayoutConstraintOrientationHorizontal];
     return l;
 }
@@ -599,6 +603,11 @@ static void ForEachTile(NSView *view, void (^block)(CCIconTile *)) {
     _label.hidden = self.title.length == 0;
     [_label setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
     _content = CCHStack(@[ _iconView, _label ], self.style == CCButtonGhost || self.style == CCButtonSubtle ? 7 : 10);
+    // Above the button's own hug (650): in a button wider than its text, the icon and the title keep their own widths
+    // and stay together in the middle. The stack has no size of its own, so its parts are what must hug.
+    [_iconView setContentHuggingPriority:700 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [_label setContentHuggingPriority:700 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [_content setHuggingPriority:700 forOrientation:NSLayoutConstraintOrientationHorizontal];
     [self addSubview:_content];
     if (_shine) [self.layer addSublayer:_shine];
 
@@ -1409,6 +1418,8 @@ static void ForEachTile(NSView *view, void (^block)(CCIconTile *)) {
 @end
 
 @implementation CCSegmentBar {
+    NSMutableArray<NSValue *> *_bands;
+    NSMutableArray<NSNumber *> *_bandIndexes;
     NSArray<NSNumber *> *_from, *_to;
     NSArray<NSColor *> *_colors;
     double _progress;
@@ -1471,6 +1482,8 @@ static double EaseQuint(double t) { return 1 - pow(1 - t, 5); }
     NSArray<NSNumber *> *widths = [self currentWidths];
     double total = 0;
     for (NSNumber *n in widths) total += n.doubleValue;
+    _bands = [NSMutableArray array];
+    _bandIndexes = [NSMutableArray array];
     if (total <= 0) return;
     // Against a capacity the bands keep their true share and the rest of the bar stays empty.
     double whole = self.capacity > 0 ? MAX(self.capacity, total) : total;
@@ -1487,6 +1500,8 @@ static double EaseQuint(double t) { return 1 - pow(1 - t, 5); }
         if (segment < 1) continue;
         [(i < _colors.count ? _colors[i] : NSColor.grayColor) setFill];
         NSRect band = NSMakeRect(x, 0, segment, h);
+        [_bands addObject:[NSValue valueWithRect:band]];
+        [_bandIndexes addObject:@(i)];
         if (self.roundedSegments) {
             CGFloat r = MIN(radius, segment / 2);
             [[NSBezierPath bezierPathWithRoundedRect:band xRadius:r yRadius:r] fill];
@@ -1496,6 +1511,26 @@ static double EaseQuint(double t) { return 1 - pow(1 - t, 5); }
         x += segment + gap;
     }
     [NSGraphicsContext restoreGraphicsState];
+}
+
+- (void)resetCursorRects {
+    if (self.onPick) [self addCursorRect:self.bounds cursor:NSCursor.pointingHandCursor];
+}
+
+- (void)mouseDown:(NSEvent *)event {
+    if (!self.onPick) {
+        [super mouseDown:event];
+        return;
+    }
+    NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
+    for (NSUInteger i = 0; i < _bands.count; i++) {
+        NSRect band = _bands[i].rectValue;
+        // The gap between two bands belongs to the band on its left.
+        if (p.x >= NSMinX(band) && p.x <= NSMaxX(band) + 3) {
+            self.onPick(_bandIndexes[i].integerValue);
+            return;
+        }
+    }
 }
 
 @end
@@ -1599,11 +1634,11 @@ static CGPathRef CreateArcPath(CGFloat diameter, CGFloat inset, double sweepDegr
     });
 }
 
-// One arc does both jobs. A scan starts from a short dash that opens into the 110° spinner as it speeds up; when the
-// scan ends the spinner runs one last lap, braking to twelve o'clock while its length eases to the real share, and
-// settles exactly in place at its final size. Speed and length never jump.
-static const double kSpinSweep = 110.0 / 360.0;
+// One arc does both jobs. A scan starts from a short dash that spins up and grows with what is found: its length is
+// always the share of the whole disk found so far. When the scan ends it runs one last lap, braking to twelve o'clock
+// while its length eases to the real share, and settles exactly in place. Speed and length never jump.
 static const double kSpinDash = 0.012;
+static const double kSpinGrowMs = 400;
 static const double kSpinSpeed = 2 * M_PI / 1.1; // radians per second
 static const double kSpinUpMs = 600;
 
@@ -1629,7 +1664,13 @@ static const double kSpinUpMs = 600;
 - (void)setAngle:(double)angle animated:(BOOL)animated {
     double previous = _angle;
     _angle = MAX(0, MIN(360, angle));
-    if (_spinning) return; // the last lap eases to whatever it is by then
+    if (_spinning) {
+        if (fabs(previous - _angle) > 0.01) {
+            BOOL motion = animated && self.window && CCMotionEnabled();
+            CCAnimateNumber(_valueMask, @"strokeEnd", MAX(kSpinDash, _angle / 360.0), motion ? kSpinGrowMs : 0, CCEaseOut, 0);
+        }
+        return;
+    }
     if (_braking) {
         // The result arrived during the last lap: keep easing towards it and still land with the brake.
         double remaining = MAX(0, _brakeEnd - CACurrentMediaTime()) * 1000;
@@ -1655,23 +1696,13 @@ static const double kSpinUpMs = 600;
     if (spinning) {
         _braking = NO;
         CCAnimateNumber(_valueMask, @"opacity", 1, motion ? 200 : 0, CCEaseOut, 0);
+        double length = MAX(kSpinDash, _angle / 360.0);
         if (!motion) {
-            CCAnimateNumber(_valueMask, @"strokeEnd", kSpinSweep, 0, nil, 0);
+            CCAnimateNumber(_valueMask, @"strokeEnd", length, 0, nil, 0);
             return;
         }
-        // Down to a short dash, then open into the spinner while it speeds up.
-        double from = [[(_valueMask.presentationLayer ?: _valueMask) valueForKeyPath:@"strokeEnd"] doubleValue];
-        CCWithoutAnimation(^{ self->_valueMask.strokeEnd = kSpinSweep; });
-        CAKeyframeAnimation *open = [CAKeyframeAnimation animationWithKeyPath:@"strokeEnd"];
-        NSMutableArray *lengths = [NSMutableArray array];
-        for (int i = 0; i <= 48; i++) {
-            double t = i / 48.0;
-            [lengths addObject:@(t < 0.25 ? from + (kSpinDash - from) * CCEaseInOut(t / 0.25)
-                                          : kSpinDash + (kSpinSweep - kSpinDash) * CCEaseInOut((t - 0.25) / 0.75))];
-        }
-        open.values = lengths;
-        open.duration = (200 + kSpinUpMs) / 1000.0;
-        [_valueMask addAnimation:open forKey:@"strokeEnd"];
+        // Down to what is found so far: nothing yet, so a short dash.
+        CCAnimateNumber(_valueMask, @"strokeEnd", length, 200, CCEaseInOut, 0);
 
         // Spin up: a quadratic ease-in reaches full speed after covering half of what full speed would.
         double spinUp = kSpinSpeed * kSpinUpMs / 1000 / 2;

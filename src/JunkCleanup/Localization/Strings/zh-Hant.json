@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "元件模型與擴充功能快取。",
   "target.dev.playwright.name": "Playwright 瀏覽器",
   "target.dev.playwright.desc": "Playwright 下載的瀏覽器二進位檔。",
+  "target.dev.projects.name": "舊專案的建置資料夾",
+  "target.dev.projects.desc": "30 天未變更的專案中的 node_modules、target、.venv、build 等。npm install、cargo build 或 pip 會重新產生。",
   "target.dev.huggingface.name": "Hugging Face Hub",
   "target.dev.huggingface.desc": "已下載的模型與資料集，可能非常大。",
   "target.dev.android.name": "Android 建置快取",

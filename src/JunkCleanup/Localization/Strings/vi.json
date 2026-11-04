@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "Bộ nhớ đệm mô hình thành phần và tiện ích mở rộng.",
   "target.dev.playwright.name": "Trình duyệt Playwright",
   "target.dev.playwright.desc": "Tệp nhị phân trình duyệt do Playwright tải.",
+  "target.dev.projects.name": "Thư mục build của dự án cũ",
+  "target.dev.projects.desc": "node_modules, target, .venv, build và tương tự trong các dự án không thay đổi 30 ngày. npm install, cargo build hoặc pip sẽ tạo lại.",
   "target.dev.huggingface.name": "Hugging Face hub",
   "target.dev.huggingface.desc": "Mô hình và bộ dữ liệu đã tải. Có thể rất lớn.",
   "target.dev.android.name": "Bộ nhớ đệm build Android",

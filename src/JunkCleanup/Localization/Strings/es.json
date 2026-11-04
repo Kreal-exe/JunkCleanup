@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "Cachés del modelo de componentes y de extensiones.",
   "target.dev.playwright.name": "Navegadores de Playwright",
   "target.dev.playwright.desc": "Binarios de navegadores descargados por Playwright.",
+  "target.dev.projects.name": "Carpetas de compilación de proyectos antiguos",
+  "target.dev.projects.desc": "node_modules, target, .venv, build y similares en proyectos sin cambios en 30 días. npm install, cargo build o pip los recuperan.",
   "target.dev.huggingface.name": "Hub de Hugging Face",
   "target.dev.huggingface.desc": "Modelos y conjuntos de datos descargados. Pueden ocupar muchísimo espacio.",
   "target.dev.android.name": "Caché de compilación de Android",

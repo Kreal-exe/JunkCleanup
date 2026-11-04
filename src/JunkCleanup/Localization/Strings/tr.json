@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "Bileşen modeli ve uzantı önbellekleri.",
   "target.dev.playwright.name": "Playwright tarayıcıları",
   "target.dev.playwright.desc": "Playwright'ın indirdiği tarayıcı ikili dosyaları.",
+  "target.dev.projects.name": "Eski projelerin derleme klasörleri",
+  "target.dev.projects.desc": "30 gündür değişmeyen projelerdeki node_modules, target, .venv, build ve benzerleri. npm install, cargo build veya pip bunları geri getirir.",
   "target.dev.huggingface.name": "Hugging Face hub",
   "target.dev.huggingface.desc": "İndirilmiş modeller ve veri kümeleri. Çok büyük olabilir.",
   "target.dev.android.name": "Android derleme önbelleği",

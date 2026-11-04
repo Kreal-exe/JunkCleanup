@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "कंपोनेंट मॉडल और एक्सटेंशन कैश।",
   "target.dev.playwright.name": "Playwright ब्राउज़र",
   "target.dev.playwright.desc": "Playwright द्वारा डाउनलोड किए गए ब्राउज़र बाइनरी।",
+  "target.dev.projects.name": "पुराने प्रोजेक्ट के बिल्ड फ़ोल्डर",
+  "target.dev.projects.desc": "30 दिनों से न बदले प्रोजेक्ट में node_modules, target, .venv, build आदि। npm install, cargo build या pip इन्हें फिर बना देते हैं।",
   "target.dev.huggingface.name": "Hugging Face हब",
   "target.dev.huggingface.desc": "डाउनलोड किए गए मॉडल और डेटासेट। बहुत बड़े हो सकते हैं।",
   "target.dev.android.name": "Android बिल्ड कैश",

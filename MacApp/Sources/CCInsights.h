@@ -21,6 +21,8 @@ typedef NS_ENUM(NSInteger, CCInsightAction) { CCInsightActionNone, CCInsightActi
 @interface CCInsights : NSObject
 /// Slow (sizes folders, asks tmutil); call off the main thread. trashTargetEnabled hides the Trash insight.
 + (NSArray<CCInsight *> *)scanWithTrashTargetEnabled:(BOOL)trashTargetEnabled;
+/// What Apple Intelligence's models take, from MobileAsset's records in folder (the newest version of each model).
++ (long long)appleIntelligenceBytesInFolder:(NSString *)folder;
 @end
 
 NS_ASSUME_NONNULL_END

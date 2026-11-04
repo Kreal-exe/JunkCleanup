@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "コンポーネント モデルと拡張機能のキャッシュ。",
   "target.dev.playwright.name": "Playwright ブラウザー",
   "target.dev.playwright.desc": "Playwright がダウンロードしたブラウザーのバイナリです。",
+  "target.dev.projects.name": "古いプロジェクトのビルドフォルダー",
+  "target.dev.projects.desc": "30 日間変更のないプロジェクトの node_modules、target、.venv、build など。npm install、cargo build、pip で元に戻せます。",
   "target.dev.huggingface.name": "Hugging Face Hub",
   "target.dev.huggingface.desc": "ダウンロード済みのモデルとデータセットです。非常に大きくなることがあります。",
   "target.dev.android.name": "Android ビルド キャッシュ",

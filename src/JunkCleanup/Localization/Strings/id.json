@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "Cache model komponen dan ekstensi.",
   "target.dev.playwright.name": "Browser Playwright",
   "target.dev.playwright.desc": "Biner browser yang diunduh Playwright.",
+  "target.dev.projects.name": "Folder build proyek lama",
+  "target.dev.projects.desc": "node_modules, target, .venv, build, dan sejenisnya di proyek yang tidak diubah selama 30 hari. npm install, cargo build, atau pip memulihkannya.",
   "target.dev.huggingface.name": "Hugging Face hub",
   "target.dev.huggingface.desc": "Model dan dataset terunduh. Bisa sangat besar.",
   "target.dev.android.name": "Cache build Android",

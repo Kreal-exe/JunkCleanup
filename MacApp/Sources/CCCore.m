@@ -1,6 +1,10 @@
 #import "CCCore.h"
+#import "CCProcesses.h"
 #include <fnmatch.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <float.h>
+#include <fts.h>
 
 NSString *CCCategoryName(CCCategory category) {
     switch (category) {
@@ -21,6 +25,44 @@ NSString *CCRiskName(CCRisk risk) {
         case CCRiskCareful: return @"Careful";
     }
     return @"Safe";
+}
+
+BOOL CCAutoSelects(CCTarget *target, CCSelectionMode mode) {
+    if (mode == CCSelectionManual) return NO;
+    if (target.isCustom) return YES;
+    // Emptying the Trash removes the user's own files for good: always the user's call.
+    if (target.alwaysPermanent || !target.enabledByDefault) return NO;
+    return target.risk == CCRiskSafe || (mode == CCSelectionModerate && target.risk == CCRiskModerate);
+}
+
+NSString *CCSelectionModeName(CCSelectionMode mode) {
+    switch (mode) {
+        case CCSelectionSafe: return @"safe";
+        case CCSelectionModerate: return @"moderate";
+        case CCSelectionManual: return @"manual";
+    }
+    return @"safe";
+}
+
+CCSelectionMode CCSelectionModeFromName(NSString *name) {
+    if ([name isEqualToString:@"moderate"]) return CCSelectionModerate;
+    if ([name isEqualToString:@"manual"]) return CCSelectionManual;
+    return CCSelectionSafe;
+}
+
+BOOL CCTouchedWithin(NSString *path, NSTimeInterval seconds) {
+    time_t limit = time(NULL) - (time_t)seconds;
+    char *paths[] = { (char *)path.fileSystemRepresentation, NULL };
+    FTS *fts = fts_open(paths, FTS_PHYSICAL | FTS_NOCHDIR | FTS_XDEV, NULL);
+    if (!fts) return NO;
+    BOOL touched = NO;
+    FTSENT *e;
+    while (!touched && (e = fts_read(fts))) {
+        if (e->fts_info == FTS_DP || e->fts_info == FTS_DNR || e->fts_info == FTS_ERR || e->fts_info == FTS_NS) continue;
+        if (e->fts_statp && e->fts_statp->st_mtimespec.tv_sec > limit) touched = YES;
+    }
+    fts_close(fts);
+    return touched;
 }
 
 // ───────────── formatting ─────────────
@@ -156,27 +198,201 @@ NSArray<NSString *> *CCExpandPattern(NSString *pattern) {
 - (NSString *)descriptionKey { return [NSString stringWithFormat:@"target.%@.desc", self.identifier]; }
 - (BOOL)isCustom { return self.category == CCCategoryCustom; }
 
-- (NSArray<NSString *> *)resolveRoots {
+- (NSArray<NSString *> *)resolveRoots { return [self rootsFromCache:YES]; }
+- (NSArray<NSString *> *)freshRoots { return [self rootsFromCache:NO]; }
+
+- (NSArray<NSString *> *)rootsFromCache:(BOOL)useCache {
+    // Finding roots by looking at processes or walking whole folders (is it idle?) is slow, and a scan asks every
+    // target for its roots several times: the answer is kept for a few seconds, minus what has gone since.
+    BOOL slow = self.finder || self.idleDays > 0;
+    static NSMutableDictionary<NSString *, NSArray *> *cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ cache = [NSMutableDictionary dictionary]; });
+    if (slow && useCache) {
+        NSArray *hit;
+        @synchronized (cache) { hit = cache[self.identifier]; }
+        if (hit && CFAbsoluteTimeGetCurrent() - [hit[0] doubleValue] < 20) {
+            NSMutableArray *still = [NSMutableArray array];
+            for (NSString *root in hit[1]) {
+                struct stat st;
+                if (lstat(root.fileSystemRepresentation, &st) == 0) [still addObject:root];
+            }
+            return still;
+        }
+    }
+
     NSMutableOrderedSet<NSString *> *roots = [NSMutableOrderedSet orderedSet];
-    for (NSString *pattern in self.rootPatterns) {
+    for (NSString *pattern in self.finder ? @[] : self.rootPatterns) {
         for (NSString *path in CCExpandPattern(pattern)) {
             NSString *normalized = [CCPathGuard normalize:path];
             if ([CCPathGuard isAllowedRoot:normalized]) [roots addObject:normalized];
         }
     }
+    if (self.finder)
+        for (NSString *path in self.finder()) {
+            NSString *normalized = [CCPathGuard normalize:path];
+            if ([CCPathGuard isAllowedRoot:normalized]) [roots addObject:normalized];
+        }
     if (self.keepsNewest && roots.count) {
         NSString *newest = roots.firstObject;
         for (NSString *root in roots)
             if ([root.lastPathComponent compare:newest.lastPathComponent options:NSNumericSearch] == NSOrderedDescending) newest = root;
         [roots removeObject:newest];
     }
+    if (self.idleDays > 0)
+        for (NSString *root in [roots.array copy])
+            if (CCTouchedWithin(root, self.idleDays * 86400)) [roots removeObject:root];
+    // Targets found by a finder or an idle check never live inside a catch-all's roots, and asking them would run
+    // their slow checks for every catch-all.
     if (self.fallback)
         for (CCTarget *t in CCCatalog.allTargets)
-            if (!t.fallback) [roots minusSet:[NSSet setWithArray:[t resolveRoots]]];
+            if (!t.fallback && !t.finder && t.idleDays <= 0) [roots minusSet:[NSSet setWithArray:[t resolveRoots]]];
+    if (slow) @synchronized (cache) { cache[self.identifier] = @[ @(CFAbsoluteTimeGetCurrent()), roots.array ]; }
     return roots.array;
 }
 
 @end
+
+// ───────────── old projects' build folders ─────────────
+// A project is recognised by its own file (package.json, Cargo.toml…), and only the folders that file's tool
+// rebuilds are offered. A project with a file changed in the last 30 days is being worked on and left alone.
+
+static const NSTimeInterval ProjectIdle = 30 * 24 * 3600;
+static const NSInteger ProjectMaxDepth = 5, ActivityBudget = 4000;
+
+/// Each kind: the files that mark the project, then the folders its tool rebuilds.
+static NSArray<NSArray<NSArray<NSString *> *> *> *ProjectKinds(void) {
+    static NSArray *kinds;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        kinds = @[
+            @[ @[ @"package.json" ], @[ @"node_modules", @".next", @".nuxt", @".turbo", @".parcel-cache", @".svelte-kit", @".angular" ] ],
+            @[ @[ @"Cargo.toml" ], @[ @"target" ] ],
+            @[ @[ @"pom.xml" ], @[ @"target" ] ],
+            @[ @[ @"build.gradle", @"build.gradle.kts", @"settings.gradle", @"settings.gradle.kts" ], @[ @"build", @".gradle" ] ],
+            @[ @[ @"pyproject.toml", @"requirements.txt", @"setup.py", @"Pipfile" ],
+               @[ @".venv", @"venv", @".tox", @".nox", @".pytest_cache", @".mypy_cache", @".ruff_cache", @"__pycache__" ] ],
+            @[ @[ @"*.csproj", @"*.fsproj" ], @[ @"bin", @"obj" ] ],
+            @[ @[ @"pubspec.yaml" ], @[ @".dart_tool", @"build" ] ],
+            @[ @[ @"Package.swift" ], @[ @".build" ] ],
+            @[ @[ @"mix.exs" ], @[ @"_build", @"deps" ] ],
+        ];
+    });
+    return kinds;
+}
+
+static NSSet<NSString *> *ArtifactNames(void) {
+    static NSSet *names;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableSet *all = [NSMutableSet set];
+        for (NSArray *kind in ProjectKinds()) [all addObjectsFromArray:kind[1]];
+        names = all;
+    });
+    return names;
+}
+
+static BOOL IsRealDirectory(NSString *path) {
+    struct stat st;
+    return lstat(path.fileSystemRepresentation, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+/// When anything in the project other than its tools' output last changed (its own files and the git index).
+static NSTimeInterval ProjectActivity(NSString *project) {
+    NSTimeInterval newest = 0;
+    struct stat st;
+    if (lstat([project stringByAppendingPathComponent:@".git/index"].fileSystemRepresentation, &st) == 0)
+        newest = st.st_mtimespec.tv_sec;
+    NSInteger budget = ActivityBudget;
+    NSMutableArray<NSArray *> *stack = [NSMutableArray arrayWithObject:@[ project, @0 ]];
+    NSSet *artifacts = ArtifactNames();
+    while (stack.count && budget > 0) {
+        NSArray *top = stack.lastObject;
+        [stack removeLastObject];
+        NSString *dir = top[0];
+        NSInteger depth = [top[1] integerValue];
+        for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:dir error:nil] ?: @[]) {
+            if (--budget <= 0) break;
+            NSString *path = [dir stringByAppendingPathComponent:name];
+            if (lstat(path.fileSystemRepresentation, &st) != 0) continue;
+            if (S_ISDIR(st.st_mode)) {
+                if (depth < 3 && ![name hasPrefix:@"."] && ![artifacts containsObject:name]) [stack addObject:@[ path, @(depth + 1) ]];
+            } else if (S_ISREG(st.st_mode) && st.st_mtimespec.tv_sec > newest) {
+                newest = st.st_mtimespec.tv_sec;
+            }
+        }
+    }
+    // A project that could not be read at all counts as in use.
+    return newest > 0 ? newest : DBL_MAX;
+}
+
+static NSArray<NSString *> *CCFindProjectArtifacts(void) {
+    // A scan resolves every target's roots more than once: the answer is kept for a few seconds.
+    static NSArray *last;
+    static CFAbsoluteTime lastAt;
+    @synchronized ([CCTarget class]) {
+        if (last && CFAbsoluteTimeGetCurrent() - lastAt < 20) return last;
+    }
+
+    NSString *home = CCHomeDirectory();
+    NSTimeInterval idleSince = NSDate.date.timeIntervalSince1970 - ProjectIdle;
+    NSArray *folders = @[ @"Code", @"Projects", @"Developer", @"dev", @"src", @"repos", @"git", @"GitHub", @"Sites",
+                          @"source/repos", @"Documents/Code", @"Documents/Projects", @"Documents/GitHub", @"Documents/Developer" ];
+    NSMutableArray<NSString *> *found = [NSMutableArray array];
+    NSMutableSet<NSString *> *seen = [NSMutableSet set];
+    NSMutableArray<NSArray *> *queue = [NSMutableArray array];
+    for (NSString *folder in folders) {
+        NSString *root = [home stringByAppendingPathComponent:folder];
+        // "code" and "Code" are one folder on a case-insensitive disk: the real path tells them apart.
+        NSString *real = IsRealDirectory(root) ? root.stringByResolvingSymlinksInPath.lowercaseString : nil;
+        if (real && ![seen containsObject:real]) {
+            [seen addObject:real];
+            [queue addObject:@[ root, @0 ]];
+        }
+    }
+    NSSet *artifactNames = ArtifactNames();
+    for (NSUInteger i = 0; i < queue.count; i++) {
+        NSString *dir = queue[i][0];
+        NSInteger depth = [queue[i][1] integerValue];
+        NSMutableSet<NSString *> *files = [NSMutableSet set], *dirs = [NSMutableSet set];
+        for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:dir error:nil] ?: @[]) {
+            struct stat st;
+            if (lstat([dir stringByAppendingPathComponent:name].fileSystemRepresentation, &st) != 0) continue;
+            if (S_ISDIR(st.st_mode)) [dirs addObject:name];
+            else if (S_ISREG(st.st_mode)) [files addObject:name];
+        }
+
+        NSMutableOrderedSet<NSString *> *artifacts = [NSMutableOrderedSet orderedSet];
+        for (NSArray *kind in ProjectKinds()) {
+            BOOL isProject = NO;
+            for (NSString *marker in kind[0])
+                for (NSString *file in files)
+                    if (fnmatch(marker.UTF8String, file.UTF8String, 0) == 0) isProject = YES;
+            if (!isProject) continue;
+            for (NSString *name in kind[1]) {
+                if (![dirs containsObject:name]) continue;
+                // A generic name counts only when it holds what the tool puts there.
+                if (([name isEqualToString:@"venv"] || [name isEqualToString:@".venv"]) &&
+                    ![NSFileManager.defaultManager fileExistsAtPath:[dir stringByAppendingFormat:@"/%@/pyvenv.cfg", name]])
+                    continue;
+                [artifacts addObject:name];
+            }
+        }
+        if (artifacts.count && ProjectActivity(dir) < idleSince)
+            for (NSString *name in artifacts) [found addObject:[dir stringByAppendingPathComponent:name]];
+
+        if (depth >= ProjectMaxDepth) continue;
+        for (NSString *name in dirs)
+            if (![name hasPrefix:@"."] && ![artifactNames containsObject:name])
+                [queue addObject:@[ [dir stringByAppendingPathComponent:name], @(depth + 1) ]];
+    }
+
+    @synchronized ([CCTarget class]) {
+        last = [found copy];
+        lastAt = CFAbsoluteTimeGetCurrent();
+    }
+    return found;
+}
 
 static CCTarget *T(NSString *identifier, CCCategory category, NSString *symbol, CCRisk risk, NSArray<NSString *> *roots) {
     CCTarget *t = [CCTarget new];
@@ -190,6 +406,12 @@ static CCTarget *T(NSString *identifier, CCCategory category, NSString *symbol, 
 
 static CCTarget *Off(CCTarget *t) {
     t.enabledByDefault = NO;
+    return t;
+}
+
+static CCTarget *Projects(CCTarget *t) {
+    t.finder = ^{ return CCFindProjectArtifacts(); };
+    t.removesRoots = YES;
     return t;
 }
 
@@ -265,10 +487,74 @@ static NSArray *Join(NSArray *a, NSArray *b) { return [a arrayByAddingObjectsFro
         xdg.fallback = YES;
         trash.alwaysPermanent = YES;
 
+        // What the mac-janitor watcher found filling Macs. Chrome signs a copy of itself (about 1.4 GB, an APFS clone)
+        // every time it starts; a Chrome that was killed leaves its copy behind. Copies of running Chromes stay.
+        CCTarget *chromeClones = T(@"browser.chromeclones", CCCategoryBrowsers, @"square.on.square", CCRiskSafe, @[]);
+        chromeClones.finder = ^NSArray<NSString *> * {
+            NSString *root = CCChromeCloneRoot();
+            NSArray *processes = [CCProcesses snapshot];
+            // Without a list of what runs, every copy would look abandoned, the running Chrome's too.
+            if (!root || !processes) return @[];
+            return CCStaleChromeClones(root, [CCProcesses chromeStarts:processes now:NSDate.date.timeIntervalSince1970]);
+        };
+        chromeClones.sharesBlocks = YES;
+        chromeClones.deletesWholeRoots = YES;
+        // The Linux VM of Claude's Cowork mode (about 11 GB), downloaded with the app even where Cowork is never used.
+        // Offered only while Cowork is idle; the app downloads it again when Cowork is opened.
+        CCTarget *cowork = T(@"app.coworkvm", CCCategoryApps, @"shippingbox", CCRiskModerate, @[]);
+        cowork.finder = ^NSArray<NSString *> * {
+            NSString *bundle = CCCoworkBundle();
+            struct stat st;
+            if (lstat(bundle.fileSystemRepresentation, &st) != 0 || !S_ISDIR(st.st_mode)) return @[];
+            return CCCoworkNeeded(CCCoworkSessions(), 24 * 3600, NULL) ? @[] : @[ bundle ];
+        };
+        cowork.deletesWholeRoots = YES;
+        cowork.beforeClean = ^(NSArray<NSString *> *roots) {
+            NSArray *processes = [CCProcesses snapshot] ?: @[];
+            for (NSString *root in roots) [CCProcesses terminate:[CCProcesses virtualMachinesHolding:root in:processes]];
+        };
+        // Claude Code's per-project scratch folders: a running session writes into its own all the time.
+        CCTarget *claudeTmp = T(@"dev.claudetmp", CCCategoryDeveloper, @"terminal", CCRiskSafe, @[]);
+        claudeTmp.finder = ^NSArray<NSString *> * {
+            NSString *base = [NSString stringWithFormat:@"/private/tmp/claude-%u", getuid()];
+            NSMutableArray *found = [NSMutableArray array];
+            struct stat st;
+            // /tmp is everyone's: the folder must be a real one of the user's, not a link someone else planted.
+            if (lstat(base.fileSystemRepresentation, &st) != 0 || !S_ISDIR(st.st_mode) || st.st_uid != getuid()) return found;
+            for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:base error:nil] ?: @[]) {
+                NSString *path = [base stringByAppendingPathComponent:name];
+                if (lstat(path.fileSystemRepresentation, &st) == 0 && S_ISDIR(st.st_mode) && st.st_uid == getuid()) [found addObject:path];
+            }
+            return found;
+        };
+        claudeTmp.idleDays = 3;
+        claudeTmp.deletesWholeRoots = YES;
+        // Temporary folders programs make in /tmp (Python's tmpXXXX, multiprocessing, test runs) and forget.
+        CCTarget *programTmp = T(@"mac.programtemp", CCCategorySystem, @"folder", CCRiskSafe, @[]);
+        programTmp.finder = ^NSArray<NSString *> * {
+            NSMutableArray *found = [NSMutableArray array];
+            for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:@"/private/tmp" error:nil] ?: @[]) {
+                BOOL ours = NO;
+                for (NSString *prefix in @[ @"tmp", @"pymp-", @"jobs-test-", @"flk.", @"flk_", @"go-build", @"cns-" ]) ours |= [name hasPrefix:prefix];
+                NSString *path = [@"/private/tmp" stringByAppendingPathComponent:name];
+                struct stat st;
+                if (ours && lstat(path.fileSystemRepresentation, &st) == 0 && (S_ISDIR(st.st_mode) || S_ISREG(st.st_mode))
+                    && st.st_uid == getuid())
+                    [found addObject:path];
+            }
+            return found;
+        };
+        programTmp.idleDays = 1;
+        programTmp.deletesWholeRoots = YES;
+        // clang's precompiled modules: rebuilt by the next compile.
+        CCTarget *clang = T(@"dev.clang", CCCategoryDeveloper, @"hammer", CCRiskSafe, @[ @"$DARWIN_CACHE/clang/ModuleCache" ]);
+        clang.idleDays = 7;
+
         all = @[
             // ── system ──
             caches,
             Aged(T(@"mac.temp", CCCategorySystem, @"folder", CCRiskSafe, @[ @"$TMP" ])),
+            programTmp,
             T(@"mac.logs", CCCategorySystem, @"doc.text", CCRiskSafe, @[ @"~/Library/Logs" ]),
             T(@"mac.crashreports", CCCategorySystem, @"exclamationmark.triangle", CCRiskSafe, @[ @"~/Library/Logs/DiagnosticReports" ]),
             T(@"mac.thumbnails", CCCategorySystem, @"photo", CCRiskSafe, @[ @"$DARWIN_CACHE/com.apple.QuickLook.thumbnailcache" ]),
@@ -295,6 +581,7 @@ static NSArray *Join(NSArray *a, NSArray *b) { return [a arrayByAddingObjectsFro
                    Join(Electron([AS stringByAppendingString:@"/com.operasoftware.OperaGX"]),
                         @[ [LC stringByAppendingString:@"/com.operasoftware.Opera"], [LC stringByAppendingString:@"/com.operasoftware.OperaGX"] ]))),
             T(@"browser.firefox", CCCategoryBrowsers, @"globe", CCRiskSafe, @[ [LC stringByAppendingString:@"/Firefox"] ]),
+            chromeClones,
 
             // ── developer ──
             T(@"dev.xcode.deriveddata", CCCategoryDeveloper, @"hammer", CCRiskSafe,
@@ -303,6 +590,9 @@ static NSArray *Join(NSArray *a, NSArray *b) { return [a arrayByAddingObjectsFro
               @[ @"~/Library/Developer/Xcode/iOS DeviceSupport", @"~/Library/Developer/Xcode/watchOS DeviceSupport",
                  @"~/Library/Developer/Xcode/tvOS DeviceSupport", @"~/Library/Developer/Xcode/visionOS DeviceSupport" ]),
             Off(T(@"dev.xcode.archives", CCCategoryDeveloper, @"archivebox", CCRiskCareful, @[ @"~/Library/Developer/Xcode/Archives" ])),
+            clang,
+            claudeTmp,
+            T(@"dev.hyperframes", CCCategoryDeveloper, @"film", CCRiskSafe, @[ @"~/.cache/hyperframes/chrome", @"~/.cache/hyperframes/fonts" ]),
             T(@"dev.simulator", CCCategoryDeveloper, @"ipad.and.iphone", CCRiskSafe, @[ @"~/Library/Developer/CoreSimulator/Caches" ]),
             T(@"dev.homebrew", CCCategoryDeveloper, @"mug", CCRiskSafe, @[ [LC stringByAppendingString:@"/Homebrew"] ]),
             T(@"dev.cocoapods", CCCategoryDeveloper, @"shippingbox", CCRiskSafe, @[ [LC stringByAppendingString:@"/CocoaPods"] ]),
@@ -335,6 +625,7 @@ static NSArray *Join(NSArray *a, NSArray *b) { return [a arrayByAddingObjectsFro
             T(@"dev.jetbrains", CCCategoryDeveloper, @"curlybraces", CCRiskModerate,
               @[ [LC stringByAppendingString:@"/JetBrains"], @"~/Library/Logs/JetBrains" ]),
             Off(T(@"dev.playwright", CCCategoryDeveloper, @"theatermasks", CCRiskCareful, @[ [LC stringByAppendingString:@"/ms-playwright"] ])),
+            Off(Projects(T(@"dev.projects", CCCategoryDeveloper, @"hammer", CCRiskModerate, @[]))),
             Off(T(@"dev.huggingface", CCCategoryDeveloper, @"brain", CCRiskCareful, @[ @"~/.cache/huggingface/hub" ])),
             Off(T(@"dev.ollama", CCCategoryDeveloper, @"brain", CCRiskCareful, @[ @"~/.ollama/models" ])),
             Off(T(@"dev.lmstudio", CCCategoryDeveloper, @"brain", CCRiskCareful, @[ @"~/.lmstudio/models", @"~/.cache/lm-studio/models" ])),
@@ -352,6 +643,10 @@ static NSArray *Join(NSArray *a, NSArray *b) { return [a arrayByAddingObjectsFro
             T(@"app.adobe", CCCategoryApps, @"film", CCRiskSafe,
               @[ [AS stringByAppendingString:@"/Adobe/Common/Media Cache Files"], [AS stringByAppendingString:@"/Adobe/Common/Media Cache"] ]),
             claudeCode,
+            cowork,
+            // Hermes Agent's package caches and downloads; its runtimes, memory and skills stay.
+            T(@"app.hermes", CCCategoryApps, @"brain.head.profile", CCRiskSafe,
+              @[ @"~/.hermes/cache/uv", @"~/.hermes/cache/pnpm", @"~/.hermes/hermes-agent/.cache", @"~/.hermes/image_cache", @"~/.hermes/audio_cache" ]),
             T(@"app.codex", CCCategoryApps, @"terminal", CCRiskSafe, @[ @"~/.codex/cache" ]),
             // Node, Python and LibreOffice for Codex: downloaded again (~1.6 GB) the next time Codex needs them.
             Off(T(@"app.codexruntime", CCCategoryApps, @"shippingbox", CCRiskModerate, @[ @"~/.cache/codex-runtimes/codex-primary-runtime" ])),

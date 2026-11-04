@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "Pamięć podręczna modelu komponentów i rozszerzeń.",
   "target.dev.playwright.name": "Przeglądarki Playwright",
   "target.dev.playwright.desc": "Pliki binarne przeglądarek pobrane przez Playwright.",
+  "target.dev.projects.name": "Foldery budowania starych projektów",
+  "target.dev.projects.desc": "node_modules, target, .venv, build i podobne w projektach nieruszanych od 30 dni. npm install, cargo build lub pip je odtworzą.",
   "target.dev.huggingface.name": "Hub Hugging Face",
   "target.dev.huggingface.desc": "Pobrane modele i zbiory danych. Mogą zajmować bardzo dużo miejsca.",
   "target.dev.android.name": "Pamięć podręczna kompilacji Android",
