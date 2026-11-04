@@ -180,6 +180,8 @@ typedef NS_ENUM(NSInteger, CCButtonStyle) { CCButtonPrimary, CCButtonDanger, CCB
 @property (nonatomic) double capacity;
 /// Each band is its own rounded pill (the Disk page) instead of one clipped strip.
 @property (nonatomic) BOOL roundedSegments;
+/// Clicking a band answers with its index in the weights.
+@property (nonatomic, copy, nullable) void (^onPick)(NSInteger index);
 @end
 
 /// The reclaimable-space ring: a gradient arc with a glow, or a spinning arc while scanning.

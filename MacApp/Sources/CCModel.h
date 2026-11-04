@@ -35,6 +35,10 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 @property (nonatomic) double share;
 @property (nonatomic, copy) NSArray<CCEntry *> *topEntries;
 @property (nonatomic, strong, nullable) CCScanResult *lastResult;
+/// A clean left files behind (in use, or out of reach): only a new scan offers them again.
+@property (nonatomic, readonly) BOOL hasLeftovers;
+/// The Trash: emptied rather than cleaned, and shown on its own line rather than as junk of its category.
+@property (nonatomic, readonly) BOOL isTrash;
 
 @property (nonatomic, readonly) NSString *name;
 @property (nonatomic, readonly) NSString *details;
@@ -93,6 +97,16 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 @property (nonatomic, readonly) NSInteger presentCount;
 @property (nonatomic, readonly) double ringAngle;
 @property (nonatomic, readonly) BOOL canClean;
+/// What a press of Clean frees now; files a clean could not remove are left out until the next scan.
+@property (nonatomic, readonly) long long cleanableBytes;
+/// All that is left to clean is the Trash: the button empties it.
+@property (nonatomic, readonly) BOOL onlyTrashLeft;
+/// What is in the Trash; on its own line of the dashboard unless the ring already shows it.
+@property (nonatomic, readonly) long long trashBytes;
+@property (nonatomic, readonly) BOOL showsTrashLine;
+@property (nonatomic, readonly) NSString *trashLine;
+/// Under the ring: the share of the whole disk that a press of Clean frees.
+@property (nonatomic, readonly) NSString *ringCaption;
 
 // disk
 @property (nonatomic, readonly) NSString *diskName;
@@ -112,6 +126,8 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 @property (nonatomic, readonly) NSString *cleanSummary;
 @property (nonatomic, readonly) NSArray<CCCleanLogItem *> *cleanLog;
 
+/// The icon of the next question; the trash when nil. Read and cleared by the window.
+@property (nonatomic, copy, nullable) NSString *confirmSymbol;
 /// Asks before cleaning; the block answers with YES to go ahead.
 @property (nonatomic, copy, nullable) void (^confirm)(NSString *title, NSString *body, NSString *okText, BOOL danger, void (^answer)(BOOL ok));
 
@@ -143,6 +159,8 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 - (void)refreshDisk;
 - (void)refreshAccess;
 - (void)openFullDiskAccessSettings;
+/// Without Full Disk Access, asks for it and opens its page of System Settings; `declined` runs when the answer is no.
+- (void)askForFullDiskAccessDeclined:(nullable void (^)(void))declined;
 - (void)addCustomFolder:(NSString *)folder refused:(void (^)(void))refused;
 - (void)removeCustomFolder:(NSString *)folder;
 - (void)resetSettings;

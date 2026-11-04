@@ -12,6 +12,21 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, strong, readonly, nullable) CCSpaceReport *report;
 @property (nonatomic, readonly) NSString *statusText;
 
+/// The disks to choose from; the picker shows only when there is more than one.
+@property (nonatomic, readonly) NSArray<CCVolume *> *volumes;
+@property (nonatomic, strong, readonly, nullable) CCVolume *selectedVolume;
+/// Another disk: the old map goes, the new one is measured (after the running analysis stops).
+- (void)selectVolume:(CCVolume *)volume;
+/// For the hidden --drive switch: picks a disk by name or mount point, measuring nothing yet.
+- (void)preselectVolume:(NSString *)nameOrPath;
+
+/// The band the list is narrowed to, or -1 for every band.
+@property (nonatomic, readonly) NSInteger filter;
+/// A band of the bar or the legend: show only its items; the same band again shows all.
+- (void)pickSegment:(NSInteger)segment;
+- (void)clearFilter;
+
+
 - (void)toggleAnalyze;
 - (void)analyze;
 - (void)cancel;

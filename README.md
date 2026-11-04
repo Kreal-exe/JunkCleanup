@@ -67,6 +67,10 @@ the Windows app's scan and clean engine and looks the same.
 ## macOS
 
 <p align="center">
+  <img src="docs/mac-demo.webp" width="900" alt="JunkCleanup on macOS: a scan, the disk map, a band opened, an external drive picked">
+</p>
+
+<p align="center">
   <img src="docs/mac-dashboard.png" width="900" alt="JunkCleanup on macOS">
 </p>
 
@@ -106,6 +110,15 @@ targets that need it are marked. Other apps' sandbox containers are never opened
 
 *Also on this disk* reports purgeable space and local Time Machine snapshots, swap files, the sleep image and old
 Simulator devices — with the command that deals with them.
+
+The *Disk* page maps any local disk: with an external drive mounted, a picker next to *Analyze* switches between it and
+the startup disk, and follows drives as they are plugged in and ejected. A band of the bar or a legend entry narrows the
+list to that band.
+
+Cleaning deletes caches and temporary files for good, because in the Trash they would free nothing; the Trash setting
+is for what you remove by hand. The Trash has its own line on the dashboard, and when it is all that is left the button
+reads *Empty Trash*. Files a clean could not remove stop counting until the next scan, and the ring shows the share of
+the whole disk that a press of *Clean* frees.
 
 ## Linux
 
@@ -242,7 +255,8 @@ The same rules hold on all three systems (on Linux: `/`, `/usr`, `/etc`, `/var`,
 base folders themselves, Documents, Downloads and the other user dirs — localized names included — `~/.ssh`,
 `~/.mozilla`, `~/.var/app`, `~/snap` and any folder that holds one of them are protected, symlinks are judged by where
 they point, and files go to the Trash; on macOS: the system folders, `/Applications`, your home folder, Documents,
-Desktop, Downloads, `~/Library`, iCloud Drive and app containers are the protected set, and files go to the Trash).
+Desktop, Downloads, `~/Library`, iCloud Drive and app containers are the protected set; caches are deleted for good, and
+what you remove by hand goes to the Trash).
 
 1. **Scanned roots only.** The cleaner receives the exact file list the scanner produced and refuses anything that is not strictly underneath one of the resolved roots ([`PathGuard`](src/JunkCleanup/Core/PathGuard.cs)).
 2. **Protected locations.** Drive roots, `Windows`, `System32`, `Program Files`, `ProgramData`, `AppData`, your profile, Documents, Pictures, Downloads, Desktop and OneDrive can never become a root — not even as a custom folder.

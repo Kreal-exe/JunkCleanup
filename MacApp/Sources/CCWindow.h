@@ -9,6 +9,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)showPage:(CCPage)page;
 - (void)applyAppearance;
 /// Writes PNGs of every page into a folder, then quits (README screenshots).
+/// --tour: scan, Disk page, a band, another disk, at set moments for recording the README animation (each moment goes to
+/// stdout as "tour <name> <unix seconds>"), then quit. Nothing is cleaned or removed.
+- (void)runTour;
 - (void)captureInto:(NSString *)folder;
 @end
 

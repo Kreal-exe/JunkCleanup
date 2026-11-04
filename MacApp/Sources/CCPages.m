@@ -301,6 +301,8 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     CCCounter *_number, *_unit;
     CCLabel *_reclaimable, *_foundSoFar, *_status, *_current, *_modeText;
     CCIcon *_modeIcon;
+    CCLabel *_trashLine;
+    NSStackView *_trashRow;
     CCSegmentBar *_segments;
     NSStackView *_heroRight, *_heroSummary, *_grid;
     NSUInteger _gridColumns;
@@ -336,8 +338,11 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     _unit.duration = 900;
     NSStackView *value = CCHStack(@[ _number, _unit ], 6);
     value.alignment = NSLayoutAttributeLastBaseline;
+    // Set on every refresh: the share of the whole disk, or "reclaimable" until there is one.
     _reclaimable = Caption(L(@"dash.reclaimable"));
-    _reclaimable.locKey = @"dash.reclaimable";
+    _reclaimable.alignment = NSTextAlignmentCenter;
+    _reclaimable.wraps = YES;
+    _reclaimable.preferredMaxLayoutWidth = 140;
     _foundSoFar = Caption(L(@"dash.foundSoFar"));
     _foundSoFar.locKey = @"dash.foundSoFar";
     NSStackView *center = CCVStack(@[ value, _reclaimable, _foundSoFar ], 0);
@@ -376,12 +381,21 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
         [legendItems addObject:item];
     }
     [_legend setItems:legendItems];
-    NSStackView *summary = CCVStack(@[ title, _status, _current, _segments, _legend ], 0);
+    // The Trash: on its own line, it is not junk of any category.
+    CCIcon *trashIcon = [CCIcon symbol:@"trash" size:12.5 weight:NSFontWeightRegular role:CCRoleMuted];
+    _trashLine = Muted(@"", 12.5);
+    _trashLine.wraps = YES;
+    [trashIcon setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [_trashLine setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    _trashRow = CCHStack(@[ trashIcon, _trashLine ], 7);
+    _trashRow.alignment = NSLayoutAttributeTop;
+    NSStackView *summary = CCVStack(@[ title, _status, _current, _segments, _legend, _trashRow ], 0);
     [summary setCustomSpacing:6 afterView:title];
+    [summary setCustomSpacing:8 afterView:_legend];
     [summary setCustomSpacing:4 afterView:_status];
     [summary setCustomSpacing:24 afterView:_current];
     [summary setCustomSpacing:14 afterView:_segments];
-    for (NSView *v in @[ title, _status, _segments, _legend ]) Stretch(summary, v);
+    for (NSView *v in @[ title, _status, _segments, _legend, _trashRow ]) Stretch(summary, v);
 
     _scanButton = [CCButton buttonWithStyle:CCButtonPrimary title:@"" symbol:@"play"];
     _scanButton.onClick = ^{ [M() toggleScan]; };
@@ -389,6 +403,10 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     _cleanButton.onClick = ^{ [M() clean]; };
     _modeIcon = [CCIcon symbol:@"trash" size:12 weight:NSFontWeightRegular role:CCRoleFaint];
     _modeText = Caption(@"");
+    _modeText.wraps = YES;
+    _modeText.alignment = NSTextAlignmentCenter;
+    _modeText.preferredMaxLayoutWidth = 200;
+    [_modeIcon setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
     NSStackView *mode = CCHStack(@[ _modeIcon, _modeText ], 7);
     NSStackView *actions = CCVStack(@[ _scanButton, _cleanButton, mode ], 14);
     actions.alignment = NSLayoutAttributeCenterX;
@@ -531,6 +549,9 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     _number.bytes = m.displayBytes;
     _unit.bytes = m.displayBytes;
     _reclaimable.hidden = scanning;
+    _reclaimable.stringValue = m.ringCaption;
+    _trashLine.stringValue = m.trashLine;
+    _trashRow.hidden = !m.showsTrashLine;
     _foundSoFar.hidden = !scanning;
     _status.stringValue = m.statusText;
     _current.stringValue = m.currentTargetName;
@@ -550,11 +571,14 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
 
     _scanButton.title = scanning ? L(@"dash.stop") : m.hasResults ? L(@"dash.rescan") : L(@"dash.scan");
     _scanButton.symbol = scanning ? @"stop" : @"play";
-    _cleanButton.title = m.selectedBytes > 0 ? LF(@"dash.clean", CCFormatBytes(m.selectedBytes)) : L(@"dash.cleanEmpty");
+    long long cleanable = m.cleanableBytes;
+    _cleanButton.title = cleanable <= 0 ? L(@"dash.cleanEmpty")
+        : m.onlyTrashLeft ? LF(@"dash.emptyBin", CCFormatBytes(cleanable))
+        : LF(@"dash.clean", CCFormatBytes(cleanable));
     _cleanButton.enabled = m.canClean;
     _cleanButton.pulsing = m.canClean;
-    _modeText.stringValue = m.settings.useTrash ? L(@"dash.modeRecycle") : L(@"dash.modePermanent");
-    _modeIcon.symbol = m.settings.useTrash ? @"trash" : @"flame";
+    _modeText.stringValue = L(@"dash.modeCaches");
+    _modeIcon.symbol = @"sparkles";
 
     for (CCCategoryCard *card in _categoryCards) [card refresh];
 
@@ -1249,7 +1273,7 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     if (_confirmClean.on != s.confirmClean) [_confirmClean setOn:s.confirmClean animated:self.window != nil];
     if (_diskWithScan.on != s.measureDiskWithScan) [_diskWithScan setOn:s.measureDiskWithScan animated:self.window != nil];
     _deleteRow.titleLabel.stringValue = L(s.useTrash ? @"settings.deleteMode.recycle" : @"settings.deleteMode.permanent");
-    _deleteRow.descLabel.stringValue = L(s.useTrash ? @"settings.deleteMode.recycle.desc" : @"settings.deleteMode.permanent.desc");
+    _deleteRow.descLabel.stringValue = L(s.useTrash ? @"settings.deleteMode.recycle.descWin" : @"settings.deleteMode.permanent.descWin");
 
     NSArray *hours = @[ @0, @6, @24, @72, @168 ];
     NSArray *titles = @[ L(@"settings.skipRecent.off"), LF(@"settings.hours", @6), LF(@"settings.hours", @24), LF(@"settings.days", @3), LF(@"settings.days", @7) ];
@@ -1770,7 +1794,8 @@ static void Stagger(NSArray<NSView *> *views, double step, double base) {
     _cancel.hidden = [okText isEqualToString:L(@"common.ok")];
     _tile.fill = ^NSColor *{ return danger ? CCTheme.dangerSoft : CCTheme.accentSoft; };
     _tile.icon.role = danger ? CCRoleDanger : CCRoleAccent;
-    _tile.icon.symbol = [okText isEqualToString:L(@"common.ok")] ? @"info.circle" : @"trash";
+    _tile.icon.symbol = [okText isEqualToString:L(@"common.ok")] ? @"info.circle" : CCModel.shared.confirmSymbol ?: @"trash";
+    CCModel.shared.confirmSymbol = nil;
     self.hidden = NO;
     [self.window makeFirstResponder:self];
     if (!CCMotionEnabled()) return;
@@ -2154,6 +2179,7 @@ static void EntryLook(CCEntry *e, NSString **symbol, NSColor **color) {
 @implementation CCToast {
     CCIconTile *_tile;
     CCLabel *_text;
+    NSLayoutConstraint *_textWidth;
     NSTimer *_timer;
 }
 
@@ -2171,7 +2197,10 @@ static void EntryLook(CCEntry *e, NSString **symbol, NSColor **color) {
         _tile.icon.role = CCRoleSuccess;
         _text = [CCLabel text:@"" size:13.5 weight:NSFontWeightSemibold role:CCRoleText];
         _text.wraps = YES;
-        [_text.widthAnchor constraintLessThanOrEqualToConstant:420].active = YES;
+        // As wide as its text up to the limit (see -showSymbol:text:): a wrapping label left to itself shrinks to a few
+        // letters a line.
+        _textWidth = [_text.widthAnchor constraintEqualToConstant:420];
+        _textWidth.active = YES;
         _text.preferredMaxLayoutWidth = 420;
         NSStackView *row = CCHStack(@[ _tile, _text ], 12);
         [self addSubview:row];
@@ -2185,6 +2214,9 @@ static void EntryLook(CCEntry *e, NSString **symbol, NSColor **color) {
 - (void)showSymbol:(NSString *)symbol text:(NSString *)text {
     _tile.icon.symbol = symbol;
     _text.stringValue = text;
+    CGFloat width = MIN(420, ceil([text sizeWithAttributes:@{ NSFontAttributeName: _text.font }].width) + 6);
+    _textWidth.constant = width;
+    _text.preferredMaxLayoutWidth = width;
     self.hidden = NO;
     if (CCMotionEnabled()) {
         CCWithoutAnimation(^{ self.layer.opacity = 0; });

@@ -407,6 +407,69 @@ static CCSpaceScope *HomeScope(BOOL fullDiskAccess) {
     return scope;
 }
 
+/// A drive other than the home one: the folders at its root, its files, the system's own folders and lost space.
+static void TestDriveMap(void) {
+    NSString *drive = Scratch();
+    NSString *(^D)(NSString *) = ^NSString *(NSString *p) { return [drive stringByAppendingPathComponent:p]; };
+    Write(D(@"Photos/a.raw"), 70000);
+    Write(D(@".tool/data.bin"), 90000);
+    Write(D(@"$RECYCLE.BIN/old.bin"), 90000);
+    Write(D(@"backup.zip"), 100000);
+
+    CCSpaceScope *scope = [CCSpaceScope new];
+    scope.rules = CCSpaceCatalog.rules;
+    NSString *inside = [drive stringByAppendingString:@"/"];
+    scope.includes = ^BOOL(NSString *path) { return [path hasPrefix:inside]; };
+    scope.roots = @[ [CCSpaceRoot pattern:drive segment:CCSpaceFiles keep:NO] ];
+    scope.filed = @{ D(@"$RECYCLE.BIN"): @(CCSpaceSystem) };
+    scope.keepNames = @[ @"$RECYCLE.BIN" ];
+    scope.volumePath = drive;
+    scope.looseFilesRoot = drive;
+    scope.hasFullDiskAccess = YES;
+    scope.smallFolder = 0;
+    scope.clusterSize = 128 * 1024;
+    CCSpaceReport *r = [[CCDiskMapEngine new] analyze:scope targets:@[ CCCatalog.allTargets.firstObject ] cancel:nil progress:nil];
+
+    CHECK(Find(r.items, @"hermes") == nil && Find(r.items, @"caches") == nil, @"another disk's items counted on this drive");
+    CCSpaceEntry *photos = Find(r.items, [@"folder:" stringByAppendingString:D(@"Photos")]);
+    CCSpaceEntry *tool = Find(r.items, [@"folder:" stringByAppendingString:D(@".tool")]);
+    CCSpaceEntry *bin = Find(r.items, [@"folder:" stringByAppendingString:D(@"$RECYCLE.BIN")]);
+    CHECK(photos && photos.segment == CCSpaceFiles && photos.risk == CCSpaceRiskKeep && !photos.canDelete, @"a folder at the root is your files");
+    CHECK(tool && tool.segment == CCSpaceOther && tool.risk == CCSpaceRiskCareful && tool.canDelete, @"a dot folder at the root");
+    CHECK(bin && bin.segment == CCSpaceSystem && bin.risk == CCSpaceRiskKeep && !bin.canDelete, @"the file system's own folder");
+    // Whole clusters: 70 000 bytes take 128 KB, and a file at the root is counted, not taken for lost space.
+    CHECK(photos.bytes == 128 * 1024, @"cluster size: %lld", photos.bytes);
+    CCSpaceEntry *loose = Find(r.items, @"loose");
+    CHECK(loose && loose.bytes == 128 * 1024 && loose.segment == CCSpaceFiles && !loose.canDelete, @"loose files: %lld", loose.bytes);
+    CHECK(r.measured == 4 * 128 * 1024, @"measured: %lld", r.measured);
+
+    CCSpaceReport *plain = [[CCDiskMapEngine new] analyze:scope targets:@[] cancel:nil progress:nil];
+    CHECK(Find(plain.items, @"unknown") == nil, @"unidentified space has a row only when the scope asks");
+
+    // Whatever no folder accounts for has a row of its own, so the band's rows add up to the band.
+    scope.namesUnaccounted = YES;
+    CCSpaceReport *named = [[CCDiskMapEngine new] analyze:scope targets:@[] cancel:nil progress:nil];
+    CCSpaceEntry *unknown = Find(named.items, @"unknown");
+    CHECK(unknown && !unknown.canDelete && unknown.segment == CCSpaceSystem, @"unidentified space has a row");
+    long long systemRows = 0;
+    for (CCSpaceEntry *e in named.items)
+        if (e.segment == CCSpaceSystem) systemRows += e.bytes;
+    CHECK(systemRows == named.segments[CCSpaceSystem], @"System rows %lld, band %lld", systemRows, named.segments[CCSpaceSystem]);
+    CHECK(named.measured == plain.measured, @"unidentified space counted as measured");
+    scope.listsSystemSpace = YES;
+    scope.hasFullDiskAccess = NO;
+    CCSpaceReport *closed = [[CCDiskMapEngine new] analyze:scope targets:@[] cancel:nil progress:nil];
+    CCSpaceEntry *noAccess = Find(closed.items, @"mac.noaccess");
+    CCSpaceEntry *sysVolumes = Find(closed.items, @"mac.sysvolumes");
+    CHECK(noAccess && Find(closed.items, @"unknown") == nil && !noAccess.canDelete, @"closed folders row without access");
+    CHECK(sysVolumes && sysVolumes.bytes > 0 && sysVolumes.children.count > 0 && !sysVolumes.canDelete, @"macOS volumes row");
+    CHECK(sysVolumes.bytes < closed.total, @"macOS volumes take %lld of a %lld disk", sysVolumes.bytes, closed.total);
+    CHECK(Find(closed.items, @"mac.appcontainers") == nil, @"containers opened without access");
+
+    NSArray<CCVolume *> *volumes = CCVolume.mounted;
+    CHECK(volumes.count > 0 && volumes.firstObject.isHome && volumes.firstObject.total > 0, @"the home disk comes first");
+}
+
 static void TestDiskMap(NSArray<NSString *> *folders) {
     NSString *home = Scratch();
     setenv("JUNKCLEANUP_HOME", home.fileSystemRepresentation, 1);
@@ -425,6 +488,8 @@ static void TestDiskMap(NSArray<NSString *> *folders) {
     Write(H(@"Library/Application Support/OldApp/data.bin"), 1200);
     Write(H(@"Library/Containers/com.example.sandboxed/Data/secret"), 5000);
     Write(H(@"Documents/report.pages"), 1500);
+    Write(H(@"Music/song.m4a"), 1500);
+    Write(H(@"Pictures/photo.jpg"), 1500);
     Write(H(@"Projects/big.bin"), 7000);
     Write(H(@".outside/real.bin"), 3000);
     [NSFileManager.defaultManager createSymbolicLinkAtPath:H(@".hermes/cache/link") withDestinationPath:H(@".outside") error:nil];
@@ -464,7 +529,10 @@ static void TestDiskMap(NSArray<NSString *> *folders) {
     CCSpaceEntry *projects = Find(r.items, [@"folder:" stringByAppendingString:H(@"Projects")]);
     CCSpaceEntry *support = Find(r.items, [@"folder:" stringByAppendingString:H(@"Library/Application Support")]);
     CHECK(documents && documents.risk == CCSpaceRiskKeep && !documents.canDelete && documents.segment == CCSpaceFiles, @"Documents");
-    CHECK(projects && projects.risk == CCSpaceRiskCareful && projects.canDelete, @"Projects");
+    // A folder of your own in the home folder is your files, not an unknown cache; a dot folder is a tool's data.
+    CHECK(projects && projects.risk == CCSpaceRiskKeep && !projects.canDelete && projects.segment == CCSpaceFiles, @"Projects");
+    CCSpaceEntry *outside = Find(r.items, [@"folder:" stringByAppendingString:H(@".outside")]);
+    CHECK(outside && outside.risk == CCSpaceRiskCareful && outside.canDelete && outside.segment == CCSpaceOther, @".outside");
     CHECK(support && support.risk == CCSpaceRiskKeep && support.children.count == 1 && support.children.firstObject.canDelete, @"Application Support");
     CHECK(Find(r.items, [@"folder:" stringByAppendingString:H(@"Library")]) == nil, @"~/Library listed as one folder");
     CHECK(Find(r.items, [@"folder:" stringByAppendingString:H(@"Library/Containers")]) == nil, @"a sandbox container was opened");
@@ -478,9 +546,14 @@ static void TestDiskMap(NSArray<NSString *> *folders) {
 
     // Without Full Disk Access, Documents is shown but not opened.
     CCSpaceReport *limited = [[CCDiskMapEngine new] analyze:HomeScope(NO) targets:targets cancel:nil progress:nil];
+    for (NSString *closed in @[ @"Music", @"Pictures" ]) {
+        CCSpaceEntry *e = Find(limited.items, [@"folder:" stringByAppendingString:H(closed)]);
+        CHECK(e && e.needsAccess && e.bytes == 0 && !e.canDelete, @"%@ opened without Full Disk Access", closed);
+    }
     CCSpaceEntry *guarded = Find(limited.items, [@"folder:" stringByAppendingString:H(@"Documents")]);
     CHECK(guarded && guarded.needsAccess && guarded.bytes == 0 && !guarded.canDelete, @"Documents without access");
-    CHECK(limited.measured == expected - Allocated(H(@"Documents/report.pages")), @"limited measured %lld", limited.measured);
+    CHECK(limited.measured == expected - Allocated(H(@"Documents/report.pages")) - Allocated(H(@"Music/song.m4a")) - Allocated(H(@"Pictures/photo.jpg")),
+          @"limited measured %lld", limited.measured);
 
     // A cancelled analysis measures nothing.
     CCCancelToken *stop = [CCCancelToken new];
@@ -548,6 +621,7 @@ int main(int argc, const char *argv[]) {
         TestNestedTargets();
         TestSettings();
         if (folders.count == 2) TestDiskMap(folders);
+        TestDriveMap();
         [NSFileManager.defaultManager removeItemAtPath:home error:nil];
 
         printf("%d passed, %d failed\n", gPassed, gFailed);

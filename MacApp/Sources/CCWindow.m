@@ -612,6 +612,56 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-retain-cycles"
 // The step block keeps itself alive until the app quits at the end of the run.
+- (void)runTour {
+    void (^after)(double, dispatch_block_t) = ^(double seconds, dispatch_block_t block) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), block);
+    };
+    void (^mark)(const char *) = ^(const char *name) {
+        printf("tour %s %.3f\n", name, NSDate.date.timeIntervalSince1970);
+        fflush(stdout);
+    };
+    __block void (^whenIdle)(dispatch_block_t);
+    whenIdle = ^(dispatch_block_t block) {
+        if (M().scanning || CCDiskModel.shared.analyzing) after(0.05, ^{ whenIdle(block); });
+        else block();
+    };
+    CCDiskModel *disk = CCDiskModel.shared;
+    after(4.0, ^{
+        mark("start");
+        after(1.5, ^{
+            mark("scan");
+            [M() startScan];
+            after(0.3, ^{ whenIdle(^{
+                mark("scanned");
+                after(1.6, ^{
+                    mark("disk");
+                    M().page = CCPageDisk;
+                    after(2.6, ^{
+                        mark("band");
+                        [disk pickSegment:CCSpaceSystem];
+                        after(3.0, ^{
+                            mark("clear");
+                            [disk clearFilter];
+                            after(2.2, ^{
+                                mark("pick");
+                                for (CCVolume *v in disk.volumes)
+                                    if (!v.isHome) { [disk selectVolume:v]; break; }
+                                after(0.3, ^{ whenIdle(^{
+                                    mark("mapped");
+                                    after(2.6, ^{
+                                        mark("end");
+                                        [NSApp terminate:nil];
+                                    });
+                                }); });
+                            });
+                        });
+                    });
+                });
+            }); });
+        });
+    });
+}
+
 - (void)captureInto:(NSString *)folder {
     [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
     __weak CCWindowController *weak = self;
@@ -625,7 +675,7 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
     NSUInteger pageArg = [args indexOfObject:@"--page"];
     BOOL diskOnly = pageArg != NSNotFound && pageArg + 1 < args.count && [[args[pageArg + 1] lowercaseString] isEqualToString:@"disk"];
     // It also resizes the window wide and to its minimum, and checks every page lets it grow and shrink (stdout).
-    if (diskOnly) shots = @[ @"disk", @"disk-parts", @"disk-wide", @"disk-narrow", @"disk-narrow-top", @"resize-check" ];
+    if (diskOnly) shots = @[ @"disk", @"disk-filter", @"disk-parts", @"disk-wide", @"disk-narrow", @"disk-narrow-top", @"resize-check" ];
     void (^resize)(CGFloat) = ^(CGFloat width) {
         CCWindowController *s = weak;
         NSRect visible = s.window.screen.visibleFrame;
@@ -667,7 +717,11 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
         if ([shot isEqualToString:@"dashboard"]) M().page = CCPageDashboard;
         else if ([shot isEqualToString:@"targets"]) M().page = CCPageTargets;
         else if ([shot isEqualToString:@"disk"]) M().page = CCPageDisk;
-        else if ([shot isEqualToString:@"disk-parts"]) [(CCDiskPage *)s->_pages[CCPageDisk] revealPartsForCapture];
+        else if ([shot isEqualToString:@"disk-filter"]) [CCDiskModel.shared pickSegment:CCSpaceSystem];
+        else if ([shot isEqualToString:@"disk-parts"]) {
+            [CCDiskModel.shared clearFilter];
+            [(CCDiskPage *)s->_pages[CCPageDisk] revealPartsForCapture];
+        }
         else if ([shot isEqualToString:@"disk-wide"]) resize(MIN(1600, NSWidth(s.window.screen.visibleFrame) - 16));
         else if ([shot isEqualToString:@"disk-narrow"]) resize(980);
         else if ([shot isEqualToString:@"disk-narrow-top"]) {

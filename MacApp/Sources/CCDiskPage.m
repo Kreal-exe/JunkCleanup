@@ -66,7 +66,7 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
 // ═════════════════════════════ model ═════════════════════════════
 
 @implementation CCDiskModel {
-    BOOL _wasScanning, _wasCleaning;
+    BOOL _wasScanning, _wasCleaning, _reanalyze;
     CCCancelToken *_token;
     NSString *(^_status)(void);
     NSMutableSet<CCSpaceEntry *> *_busy;
@@ -82,8 +82,14 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
 - (instancetype)init {
     if ((self = [super init])) {
         _busy = [NSMutableSet set];
+        _filter = -1;
         [self setStatus:^NSString *{ return @""; }];
+        [self refreshVolumes];
         __weak CCDiskModel *weak = self;
+        // A drive plugged in or ejected: the picker follows, and the map of a drive that left goes with it.
+        for (NSNotificationName name in @[ NSWorkspaceDidMountNotification, NSWorkspaceDidUnmountNotification ])
+            [NSWorkspace.sharedWorkspace.notificationCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue
+                                                                    usingBlock:^(NSNotification *n) { [weak volumesChanged]; }];
         [NSNotificationCenter.defaultCenter addObserverForName:CCLanguageDidChangeNotification object:nil queue:nil
                                                     usingBlock:^(NSNotification *n) {
             CCDiskModel *s = weak;
@@ -119,6 +125,75 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     [NSNotificationCenter.defaultCenter postNotificationName:CCModelDidChangeNotification object:M()];
 }
 
+// ───────────── which disk ─────────────
+
+- (void)refreshVolumes {
+    NSArray<CCVolume *> *volumes = [CCVolume mounted];
+    _volumes = volumes;
+    NSString *path = _selectedVolume.path;
+    CCVolume *same = nil;
+    for (CCVolume *v in volumes)
+        if ([v.path isEqualToString:path]) same = v;
+    _selectedVolume = same ?: volumes.firstObject;
+}
+
+- (void)volumesChanged {
+    NSString *before = _selectedVolume.path;
+    [self refreshVolumes];
+    if (before && ![before isEqualToString:_selectedVolume.path]) [self mapSelected];
+    else [self changed];
+}
+
+- (void)selectVolume:(CCVolume *)volume {
+    if ([volume.path isEqualToString:_selectedVolume.path]) return;
+    [M() refreshAccess];
+    if (volume.isHome || M().hasFullDiskAccess) {
+        _selectedVolume = volume;
+        [self mapSelected];
+        return;
+    }
+    // Opening an external drive would make macOS ask on its own: Full Disk Access first. Declined, macOS asks after all.
+    __weak CCDiskModel *weak = self;
+    [M() askForFullDiskAccessDeclined:^{
+        CCDiskModel *s = weak;
+        if (!s) return;
+        s->_selectedVolume = volume;
+        [s mapSelected];
+    }];
+    [self changed]; // the picker goes back to the disk still mapped
+}
+
+- (void)preselectVolume:(NSString *)nameOrPath {
+    for (CCVolume *v in _volumes)
+        if ([v.path isEqualToString:nameOrPath] || [v.name caseInsensitiveCompare:nameOrPath] == NSOrderedSame) _selectedVolume = v;
+}
+
+- (void)mapSelected {
+    _report = nil;
+    _filter = -1;
+    if (self.analyzing) {
+        _reanalyze = YES;
+        [self cancel];
+    } else {
+        [self analyze];
+    }
+    [self changed];
+}
+
+// ───────────── the band picked ─────────────
+
+- (void)pickSegment:(NSInteger)segment {
+    _filter = segment == _filter ? -1 : segment;
+    [self changed];
+}
+
+- (void)clearFilter {
+    _filter = -1;
+    [self changed];
+}
+
+// ───────────── measuring ─────────────
+
 - (void)toggleAnalyze {
     if (self.analyzing) [self cancel];
     else [self analyze];
@@ -138,7 +213,9 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     NSMutableArray<CCTarget *> *targets = [NSMutableArray array];
     for (CCTargetItem *t in M().targets)
         if (t.isPresent) [targets addObject:t.target];
-    CCSpaceScope *scope = [CCSpaceCatalog scopeWithFullDiskAccess:M().hasFullDiskAccess];
+    [self refreshVolumes];
+    CCSpaceScope *scope = _selectedVolume ? [CCSpaceCatalog scopeForVolume:_selectedVolume fullDiskAccess:M().hasFullDiskAccess]
+                                          : [CCSpaceCatalog scopeWithFullDiskAccess:M().hasFullDiskAccess];
     __weak CCDiskModel *weak = self;
     __block CFAbsoluteTime last = 0;
     NSObject *lock = [NSObject new];
@@ -166,6 +243,12 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     if (token != _token) return;
     _token = nil;
     _analyzing = NO;
+    if (_reanalyze) {
+        // The disk was changed while the old one was being measured.
+        _reanalyze = NO;
+        [self analyze];
+        return;
+    }
     if (token.isCancelled) {
         [self setStatus:^NSString *{ return L(@"dash.cancelled"); }];
     } else {
@@ -305,7 +388,9 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
 - (void)finishRemoval:(long long)freed trash:(BOOL)trash {
     if (freed <= 0) return;
     [M() addFreed:freed];
-    if (!trash && self.report && M().diskTotal > 0) self.report.free = M().diskFree;
+    if (trash || !self.report) return;
+    CCVolume *volume = [CCVolume volumeAtPath:_selectedVolume.path];
+    if (volume) self.report.free = volume.free;
 }
 
 - (void)copyCommand:(CCSpaceEntry *)entry {
@@ -336,7 +421,7 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     NSStackView *_safeRow;
     CCCounter *_bytes;
     CCSmoothBar *_bar;
-    CCButton *_clean, *_copy, *_reveal, *_trash, *_confirm, *_chevron;
+    CCButton *_clean, *_grant, *_copy, *_reveal, *_trash, *_confirm, *_chevron;
     CCCollapsible *_details;
     NSStackView *_children;
     NSTimer *_revert;
@@ -410,7 +495,12 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _copy = [CCButton buttonWithStyle:CCButtonGhost title:nil symbol:@"doc.on.doc"];
     _copy.locKey = @"insight.copyCommand";
     _copy.toolTip = e.command;
-    for (CCButton *b in @[ _clean, _copy ]) {
+    _grant = [CCButton buttonWithStyle:CCButtonGhost title:nil symbol:@"lock.shield"];
+    _grant.locKey = @"titlebar.runAsAdmin";
+    _grant.toolTip = L(@"titlebar.adminHint");
+    _grant.onClick = ^{ [M() openFullDiskAccessSettings]; };
+    _grant.hidden = ![e.identifier isEqualToString:@"mac.noaccess"];
+    for (CCButton *b in @[ _clean, _grant, _copy ]) {
         b.padding = NSEdgeInsetsMake(6, 10, 6, 10);
         b.fontSize = 12;
         b.symbolSize = 12;
@@ -440,6 +530,8 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     // in one column whether or not a row has all three.
     NSStackView *actions = CCHStack(@[], 2);
     [actions setViews:@[ _clean, _copy, _reveal, _trash, _confirm, _chevron ] inGravity:NSStackViewGravityTrailing];
+    [actions insertView:_grant atIndex:0 inGravity:NSStackViewGravityTrailing];
+    [actions setCustomSpacing:8 afterView:_grant];
     [actions setCustomSpacing:8 afterView:_clean];
     [actions setCustomSpacing:8 afterView:_copy];
     [actions.widthAnchor constraintGreaterThanOrEqualToConstant:3 * 34 + 2 * 2].active = YES;
@@ -570,18 +662,78 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
 
 @end
 
+// ═════════════════════════════ a legend entry ═════════════════════════════
+
+/// A band's dot, name and size; clicking it narrows the list to that band.
+@interface CCLegendChip : CCBox
+@property (nonatomic) BOOL picked;
+@property (nonatomic, copy) void (^onClick)(void);
+- (instancetype)initWithContent:(NSView *)content;
+@end
+
+@implementation CCLegendChip {
+    NSTrackingArea *_tracking;
+    BOOL _hovered;
+}
+
+- (instancetype)initWithContent:(NSView *)content {
+    if ((self = [super initWithFrame:NSZeroRect])) {
+        self.radius = 9;
+        [self addSubview:content];
+        CCPin(content, self, NSEdgeInsetsMake(4, 8, 4, 8));
+        self.accessibilityElement = YES;
+        self.accessibilityRole = NSAccessibilityButtonRole;
+        [self applyFill];
+    }
+    return self;
+}
+
+- (void)applyFill {
+    BOOL picked = _picked, hovered = _hovered;
+    self.fill = ^NSColor *{ return picked ? CCTheme.accentSoft : hovered ? CCTheme.inset : NSColor.clearColor; };
+}
+
+- (void)setPicked:(BOOL)picked {
+    if (picked == _picked) return;
+    _picked = picked;
+    [self applyFill];
+}
+
+- (void)resetCursorRects { [self addCursorRect:self.bounds cursor:NSCursor.pointingHandCursor]; }
+- (void)mouseDown:(NSEvent *)event { if (self.onClick) self.onClick(); }
+- (BOOL)accessibilityPerformPress {
+    if (self.onClick) self.onClick();
+    return YES;
+}
+
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (_tracking) [self removeTrackingArea:_tracking];
+    _tracking = [[NSTrackingArea alloc] initWithRect:NSZeroRect
+                                             options:NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow | NSTrackingInVisibleRect
+                                               owner:self userInfo:nil];
+    [self addTrackingArea:_tracking];
+}
+- (void)mouseEntered:(NSEvent *)event { _hovered = YES; [self applyFill]; }
+- (void)mouseExited:(NSEvent *)event { _hovered = NO; [self applyFill]; }
+
+@end
+
 // ═════════════════════════════ the page ═════════════════════════════
 
 @implementation CCDiskPage {
     CCScrollPage *_scroll;
     NSView *_header;
     CCCard *_mapCard, *_listCard;
-    CCLabel *_subtitle, *_free, *_status, *_notice, *_safeText, *_listDesc;
-    CCButton *_analyze, *_removeSafe;
+    CCLabel *_subtitle, *_free, *_status, *_notice, *_safeText, *_listDesc, *_filterText, *_filterEmpty;
+    CCButton *_analyze, *_removeSafe, *_showAll;
+    CCPopupField *_drive;
+    NSStackView *_filterRow;
+    NSArray<CCVolume *> *_shownVolumes;
     CCSpinner *_spinner;
     CCSegmentBar *_bar;
     CCFlowView *_legend;
-    NSMutableArray<NSView *> *_legendItems;
+    NSMutableArray<CCLegendChip *> *_legendItems;
     NSMutableArray<CCLabel *> *_legendNames;
     NSMutableArray<CCCounter *> *_legendBytes;
     NSStackView *_safeGroup, *_rows;
@@ -606,7 +758,18 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _analyze = [CCButton buttonWithStyle:CCButtonPrimary title:@"" symbol:@"chart.pie"];
     _analyze.onClick = ^{ [D() toggleAnalyze]; };
     [_analyze.widthAnchor constraintGreaterThanOrEqualToConstant:190].active = YES;
-    NSStackView *header = CCHStack(@[ titles, CCSpacer(), _analyze ], 16);
+    // Which disk to map, when there is more than one.
+    _drive = [CCPopupField new];
+    // Wide enough for "Macintosh HD  ·  123.4 GB free".
+    NSLayoutConstraint *driveWidth = [_drive.widthAnchor constraintEqualToConstant:280];
+    driveWidth.priority = NSLayoutPriorityDefaultHigh + 1;
+    driveWidth.active = YES;
+    _drive.onSelect = ^(NSInteger index) {
+        NSArray<CCVolume *> *volumes = D().volumes;
+        if (index >= 0 && index < (NSInteger)volumes.count) [D() selectVolume:volumes[index]];
+    };
+    NSStackView *header = CCHStack(@[ titles, CCSpacer(), _drive, _analyze ], 16);
+    [header setCustomSpacing:12 afterView:_drive];
     [titles setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
     _header = header;
 
@@ -617,9 +780,11 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _bar = [CCSegmentBar new];
     _bar.roundedSegments = YES;
     CCSize(_bar, 0, 26);
+    _bar.onPick = ^(NSInteger segment) { [D() pickSegment:segment]; };
     _legend = [CCFlowView new];
-    _legend.hSpacing = 22;
-    _legend.vSpacing = 8;
+    // Each entry has its own padding for the click area.
+    _legend.hSpacing = 6;
+    _legend.vSpacing = 2;
     _legendItems = [NSMutableArray array];
     _legendNames = [NSMutableArray array];
     _legendBytes = [NSMutableArray array];
@@ -634,8 +799,10 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
         bytes.onRender = ^{ [legend itemsChanged]; };
         NSStackView *item = CCHStack(@[ dot, name, bytes ], 8);
         [item setCustomSpacing:7 afterView:name];
-        item.hidden = YES;
-        [_legendItems addObject:item];
+        CCLegendChip *chip = [[CCLegendChip alloc] initWithContent:item];
+        chip.onClick = ^{ [D() pickSegment:s]; };
+        chip.hidden = YES;
+        [_legendItems addObject:chip];
         [_legendNames addObject:name];
         [_legendBytes addObject:bytes];
     }
@@ -677,9 +844,26 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     listDesc.wraps = YES;
     _listDesc = listDesc;
     _rows = CCVStack(@[], 8);
-    NSStackView *list = CCVStack(@[ listTitle, listDesc, _rows ], 4);
+    // The band picked in the bar, with a way back to everything.
+    _filterText = [CCLabel text:@"" size:13 weight:NSFontWeightSemibold role:CCRoleText];
+    _showAll = [CCButton buttonWithStyle:CCButtonGhost title:nil symbol:@"xmark"];
+    _showAll.locKey = @"disk.filter.all";
+    _showAll.padding = NSEdgeInsetsMake(5, 10, 5, 10);
+    _showAll.fontSize = 12;
+    _showAll.symbolSize = 11;
+    _showAll.onClick = ^{ [D() clearFilter]; };
+    _filterRow = CCHStack(@[ _filterText, _showAll, CCSpacer() ], 12);
+    _filterRow.hidden = YES;
+    _filterEmpty = [CCLabel key:@"disk.filter.empty" size:12.5 weight:NSFontWeightRegular role:CCRoleMuted];
+    _filterEmpty.wraps = YES;
+    _filterEmpty.hidden = YES;
+    NSStackView *list = CCVStack(@[ listTitle, listDesc, _filterRow, _filterEmpty, _rows ], 4);
     [list setCustomSpacing:16 afterView:listDesc];
+    [list setCustomSpacing:12 afterView:_filterRow];
+    [list setCustomSpacing:12 afterView:_filterEmpty];
     Stretch(list, listDesc);
+    Stretch(list, _filterRow);
+    Stretch(list, _filterEmpty);
     Stretch(list, _rows);
     _listCard = [CCCard card];
     [_listCard addSubview:list];
@@ -716,11 +900,26 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _analyze.symbol = analyzing ? @"stop" : @"chart.pie";
     _free.stringValue = r ? LF(@"disk.free", CCFormatBytes(r.free)) : @"";
 
+    NSArray<CCVolume *> *volumes = d.volumes;
+    NSMutableArray<NSString *> *driveNames = [NSMutableArray array];
+    for (CCVolume *v in volumes) [driveNames addObject:[NSString stringWithFormat:@"%@  ·  %@", v.name, LF(@"disk.free", CCFormatBytes(v.free))]];
+    if (![driveNames isEqualToArray:_drive.items]) _drive.items = driveNames;
+    NSInteger driveIndex = 0;
+    for (NSUInteger i = 0; i < volumes.count; i++)
+        if ([volumes[i].path isEqualToString:d.selectedVolume.path]) driveIndex = (NSInteger)i;
+    if (driveIndex != _drive.selectedIndex) _drive.selectedIndex = driveIndex;
+    _drive.hidden = volumes.count <= 1;
+    _drive.toolTip = L(@"disk.drive");
+    _bar.toolTip = L(@"disk.pickBand");
+
     NSMutableArray *weights = [NSMutableArray array], *colors = [NSMutableArray array];
     for (NSInteger s = 0; s < CCSpaceSegmentCount; s++) {
         long long bytes = r ? r.segments[s] : 0;
         [weights addObject:@(bytes)];
-        [colors addObject:SegmentColor(s, 1)];
+        BOOL dimmed = d.filter >= 0 && d.filter != s;
+        [colors addObject:SegmentColor(s, dimmed ? 0.22 : 1)];
+        _legendItems[s].picked = d.filter == s;
+        _legendItems[s].alphaValue = dimmed ? 0.45 : 1;
         _legendNames[s].stringValue = L([@"disk.seg." stringByAppendingString:CCSpaceSegmentName(s)]);
         _legendBytes[s].bytes = bytes;
         _legendItems[s].hidden = bytes <= 0;
@@ -729,7 +928,7 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     [_bar setWeights:weights colors:colors];
     [_legend itemsChanged];
     _legend.hidden = !r;
-    _notice.hidden = !r || M().hasFullDiskAccess;
+    _notice.hidden = !r || M().hasFullDiskAccess || !d.selectedVolume.isHome;
 
     _status.stringValue = d.statusText;
     _spinner.hidden = !analyzing;
@@ -738,6 +937,7 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _safeGroup.hidden = !r || analyzing || safe <= 0;
 
     [self syncRows:r];
+    [self applyFilter:r];
     if (_listCard.hidden && r) {
         _listCard.hidden = NO;
         // Laid out while hidden, the description still wraps at its old width: measure it again once shown.
@@ -748,6 +948,30 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
         });
     }
     _listCard.hidden = !r;
+}
+
+/// Only the rows of the band picked; a band no folder accounts for says so.
+- (void)applyFilter:(CCSpaceReport *)report {
+    NSInteger filter = D().filter;
+    BOOL any = NO;
+    for (CCDiskRow *row in _rows.arrangedSubviews) {
+        BOOL shown = filter < 0 || row.entry.segment == filter;
+        BOOL wasHidden = row.hidden;
+        row.hidden = !shown;
+        any |= shown;
+        // Laid out while hidden, its text still wraps at the old width.
+        if (shown && wasHidden) dispatch_async(dispatch_get_main_queue(), ^{ [row refresh]; });
+    }
+    _filterRow.hidden = filter < 0;
+    _filterText.stringValue = filter >= 0 ? LF(@"disk.filter", L([@"disk.seg." stringByAppendingString:CCSpaceSegmentName(filter)])) : @"";
+    BOOL wasEmptyHidden = _filterEmpty.hidden;
+    _filterEmpty.hidden = filter < 0 || any || !report;
+    if (wasEmptyHidden && !_filterEmpty.hidden)
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self->_listCard layoutSubtreeIfNeeded];
+            self->_filterEmpty.preferredMaxLayoutWidth = NSWidth(self->_filterEmpty.bounds);
+            [self->_filterEmpty invalidateIntrinsicContentSize];
+        });
 }
 
 - (void)syncRows:(CCSpaceReport *)report {
