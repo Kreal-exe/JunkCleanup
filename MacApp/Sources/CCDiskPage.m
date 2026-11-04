@@ -47,8 +47,17 @@ static NSString *Shorten(NSString *path) {
     return [path hasPrefix:[home stringByAppendingString:@"/"]] ? [@"~" stringByAppendingString:[path substringFromIndex:home.length]] : path;
 }
 
+/// One app in the Applications row: its icon and name are enough, the row above says what the trash icon does.
+static BOOL IsAppRow(CCSpaceEntry *e) {
+    return [e.identifier hasPrefix:@"mac.applications/"] && [e.path hasSuffix:@".app"];
+}
+
 /// A listed folder (a model, a VM) keeps its own name; parts and known items use their localized one.
 static NSString *EntryName(CCSpaceEntry *e) {
+    if (IsAppRow(e)) {
+        NSString *name = [NSFileManager.defaultManager displayNameAtPath:e.path];
+        return [name hasSuffix:@".app"] ? [name substringToIndex:name.length - 4] : name;
+    }
     if (e.name) return e.name;
     if (!e.key) return Shorten(e.path);
     NSString *name = L([e.key stringByAppendingString:@".name"]);
@@ -57,6 +66,8 @@ static NSString *EntryName(CCSpaceEntry *e) {
 }
 
 static NSString *EntryDescription(CCSpaceEntry *e) {
+    if (IsAppRow(e)) return @"";
+    if (e.uninstallable) return L(@"disk.uninstall.row");
     NSString *key = [e.key stringByAppendingString:@".desc"];
     return key && [CCLocalization.shared hasKey:key] ? L(key) : @"";
 }
@@ -66,7 +77,7 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
 // ═════════════════════════════ model ═════════════════════════════
 
 @implementation CCDiskModel {
-    BOOL _wasScanning, _wasCleaning;
+    BOOL _wasScanning, _wasCleaning, _reanalyze;
     CCCancelToken *_token;
     NSString *(^_status)(void);
     NSMutableSet<CCSpaceEntry *> *_busy;
@@ -82,8 +93,14 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
 - (instancetype)init {
     if ((self = [super init])) {
         _busy = [NSMutableSet set];
+        _filter = -1;
         [self setStatus:^NSString *{ return @""; }];
+        [self refreshVolumes];
         __weak CCDiskModel *weak = self;
+        // A drive plugged in or ejected: the picker follows, and the map of a drive that left goes with it.
+        for (NSNotificationName name in @[ NSWorkspaceDidMountNotification, NSWorkspaceDidUnmountNotification ])
+            [NSWorkspace.sharedWorkspace.notificationCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue
+                                                                    usingBlock:^(NSNotification *n) { [weak volumesChanged]; }];
         [NSNotificationCenter.defaultCenter addObserverForName:CCLanguageDidChangeNotification object:nil queue:nil
                                                     usingBlock:^(NSNotification *n) {
             CCDiskModel *s = weak;
@@ -119,6 +136,75 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     [NSNotificationCenter.defaultCenter postNotificationName:CCModelDidChangeNotification object:M()];
 }
 
+// ───────────── which disk ─────────────
+
+- (void)refreshVolumes {
+    NSArray<CCVolume *> *volumes = [CCVolume mounted];
+    _volumes = volumes;
+    NSString *path = _selectedVolume.path;
+    CCVolume *same = nil;
+    for (CCVolume *v in volumes)
+        if ([v.path isEqualToString:path]) same = v;
+    _selectedVolume = same ?: volumes.firstObject;
+}
+
+- (void)volumesChanged {
+    NSString *before = _selectedVolume.path;
+    [self refreshVolumes];
+    if (before && ![before isEqualToString:_selectedVolume.path]) [self mapSelected];
+    else [self changed];
+}
+
+- (void)selectVolume:(CCVolume *)volume {
+    if ([volume.path isEqualToString:_selectedVolume.path]) return;
+    [M() refreshAccess];
+    if (volume.isHome || M().hasFullDiskAccess) {
+        _selectedVolume = volume;
+        [self mapSelected];
+        return;
+    }
+    // Opening an external drive would make macOS ask on its own: Full Disk Access first. Declined, macOS asks after all.
+    __weak CCDiskModel *weak = self;
+    [M() askForFullDiskAccessDeclined:^{
+        CCDiskModel *s = weak;
+        if (!s) return;
+        s->_selectedVolume = volume;
+        [s mapSelected];
+    }];
+    [self changed]; // the picker goes back to the disk still mapped
+}
+
+- (void)preselectVolume:(NSString *)nameOrPath {
+    for (CCVolume *v in _volumes)
+        if ([v.path isEqualToString:nameOrPath] || [v.name caseInsensitiveCompare:nameOrPath] == NSOrderedSame) _selectedVolume = v;
+}
+
+- (void)mapSelected {
+    _report = nil;
+    _filter = -1;
+    if (self.analyzing) {
+        _reanalyze = YES;
+        [self cancel];
+    } else {
+        [self analyze];
+    }
+    [self changed];
+}
+
+// ───────────── the band picked ─────────────
+
+- (void)pickSegment:(NSInteger)segment {
+    _filter = segment == _filter ? -1 : segment;
+    [self changed];
+}
+
+- (void)clearFilter {
+    _filter = -1;
+    [self changed];
+}
+
+// ───────────── measuring ─────────────
+
 - (void)toggleAnalyze {
     if (self.analyzing) [self cancel];
     else [self analyze];
@@ -138,7 +224,9 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     NSMutableArray<CCTarget *> *targets = [NSMutableArray array];
     for (CCTargetItem *t in M().targets)
         if (t.isPresent) [targets addObject:t.target];
-    CCSpaceScope *scope = [CCSpaceCatalog scopeWithFullDiskAccess:M().hasFullDiskAccess];
+    [self refreshVolumes];
+    CCSpaceScope *scope = _selectedVolume ? [CCSpaceCatalog scopeForVolume:_selectedVolume fullDiskAccess:M().hasFullDiskAccess]
+                                          : [CCSpaceCatalog scopeWithFullDiskAccess:M().hasFullDiskAccess];
     __weak CCDiskModel *weak = self;
     __block CFAbsoluteTime last = 0;
     NSObject *lock = [NSObject new];
@@ -166,6 +254,12 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     if (token != _token) return;
     _token = nil;
     _analyzing = NO;
+    if (_reanalyze) {
+        // The disk was changed while the old one was being measured.
+        _reanalyze = NO;
+        [self analyze];
+        return;
+    }
     if (token.isCancelled) {
         [self setStatus:^NSString *{ return L(@"dash.cancelled"); }];
     } else {
@@ -305,7 +399,94 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
 - (void)finishRemoval:(long long)freed trash:(BOOL)trash {
     if (freed <= 0) return;
     [M() addFreed:freed];
-    if (!trash && self.report && M().diskTotal > 0) self.report.free = M().diskFree;
+    if (trash || !self.report) return;
+    CCVolume *volume = [CCVolume volumeAtPath:_selectedVolume.path];
+    if (volume) self.report.free = volume.free;
+}
+
+// ───────────── uninstalling an app ─────────────
+
+- (void)toast:(NSString *)text symbol:(NSString *)symbol {
+    [NSNotificationCenter.defaultCenter postNotificationName:CCModelToastNotification object:M() userInfo:@{ @"symbol": symbol, @"text": text }];
+}
+
+- (void)uninstall:(CCSpaceEntry *)entry {
+    if (!entry.uninstallable || self.analyzing || [_busy containsObject:entry]) return;
+    NSString *appPath = entry.path, *name = appPath.lastPathComponent.stringByDeletingPathExtension;
+    // Without this macOS would ask about each app's container, or refuse: one switch first.
+    [M() refreshAccess];
+    if (!M().hasFullDiskAccess) {
+        [M() askForFullDiskAccessDeclined:nil];
+        return;
+    }
+    NSString *identifier = [CCAppLeftovers bundleIdOfApp:appPath];
+    if (identifier && [NSRunningApplication runningApplicationsWithBundleIdentifier:identifier].count) {
+        [self toast:LF(@"disk.uninstall.running", name) symbol:@"exclamationmark.triangle"];
+        return;
+    }
+    [_busy addObject:entry];
+    [self changed];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSArray<NSString *> *leftovers = [CCAppLeftovers leftoversOfApp:appPath otherApps:[CCAppLeftovers installedApps]];
+        NSMutableArray<NSNumber *> *sizes = [NSMutableArray array];
+        long long total = entry.bytes;
+        for (NSString *path in leftovers) {
+            long long bytes = [CCDiskMapEngine measure:path excluding:nil cancel:nil unreadable:NULL];
+            [sizes addObject:@(bytes)];
+            total += bytes;
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self->_busy removeObject:entry];
+            [self changed];
+            NSMutableArray<NSString *> *lines = [NSMutableArray arrayWithObject:[NSString stringWithFormat:@"%@ · %@", appPath.lastPathComponent, CCFormatBytes(entry.bytes)]];
+            // The largest first; a long list is cut, with how many more.
+            NSMutableArray<NSNumber *> *indexes = [NSMutableArray array];
+            for (NSUInteger i = 0; i < leftovers.count; i++) [indexes addObject:@(i)];
+            NSArray<NSNumber *> *order = [indexes sortedArrayUsingComparator:^NSComparisonResult(NSNumber *a, NSNumber *b) {
+                return [sizes[b.unsignedIntegerValue] compare:sizes[a.unsignedIntegerValue]];
+            }];
+            for (NSUInteger i = 0; i < MIN((NSUInteger)8, order.count); i++) {
+                NSUInteger at = order[i].unsignedIntegerValue;
+                [lines addObject:[NSString stringWithFormat:@"%@ · %@", Shorten(leftovers[at]), CCFormatBytes(sizes[at].longLongValue)]];
+            }
+            if (order.count > 8) [lines addObject:LF(@"disk.uninstall.more", @(order.count - 8))];
+            __weak CCDiskModel *weak = self;
+            M().confirm(LF(@"disk.uninstall.title", name, CCFormatBytes(total)),
+                        LF(@"disk.uninstall.body", [lines componentsJoinedByString:@"\n"]),
+                        L(@"disk.uninstall.ok"), YES, ^(BOOL ok) {
+                if (ok) [weak moveApp:entry leftovers:leftovers total:total];
+            });
+        });
+    });
+}
+
+- (void)moveApp:(CCSpaceEntry *)entry leftovers:(NSArray<NSString *> *)leftovers total:(long long)total {
+    NSString *appPath = entry.path, *name = appPath.lastPathComponent.stringByDeletingPathExtension;
+    CCSpaceReport *report = self.report;
+    [_busy addObject:entry];
+    [self changed];
+    // The app first, through the system, which asks for the password when an app store installed it as root. If it stays,
+    // its data stays too.
+    [NSWorkspace.sharedWorkspace recycleURLs:@[ [NSURL fileURLWithPath:appPath] ] completionHandler:^(NSDictionary<NSURL *, NSURL *> *moved, NSError *error) {
+        if (error || moved.count == 0 || [NSFileManager.defaultManager fileExistsAtPath:appPath]) {
+            [self->_busy removeObject:entry];
+            [self toast:LF(@"disk.uninstall.failed", name) symbol:@"exclamationmark.triangle"];
+            [self changed];
+            return;
+        }
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSInteger left = 0;
+            for (NSString *path in leftovers)
+                if (![CCAppLeftovers moveToTrash:path]) left++;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self->_busy removeObject:entry];
+                if (report == self.report) [self account:entry freed:entry.bytes trash:YES];
+                [self toast:left ? LF(@"disk.uninstall.partly", name, @(left)) : LF(@"disk.uninstall.done", name, CCFormatBytes(total))
+                     symbol:left ? @"exclamationmark.triangle" : @"checkmark"];
+                [self changed];
+            });
+        });
+    }];
 }
 
 - (void)copyCommand:(CCSpaceEntry *)entry {
@@ -336,7 +517,7 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     NSStackView *_safeRow;
     CCCounter *_bytes;
     CCSmoothBar *_bar;
-    CCButton *_clean, *_copy, *_reveal, *_trash, *_confirm, *_chevron;
+    CCButton *_clean, *_grant, *_uninstall, *_copy, *_reveal, *_trash, *_confirm, *_chevron;
     CCCollapsible *_details;
     NSStackView *_children;
     NSTimer *_revert;
@@ -360,9 +541,21 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     CCSpaceSegment segment = e.segment;
     __weak CCDiskRow *weak = self;
 
-    CCIconTile *tile = [CCIconTile tileWithSymbol:e.symbol size:38 radius:11 iconSize:16];
-    tile.fill = ^NSColor *{ return SegmentColor(segment, 0.16); };
-    tile.icon.colorBlock = ^NSColor *{ return SegmentColor(segment, 1); };
+    NSView *tile;
+    if (IsAppRow(e)) {
+        // An app shows its own icon, like Finder, instead of the band's symbol.
+        NSImageView *icon = [NSImageView imageViewWithImage:[NSWorkspace.sharedWorkspace iconForFile:e.path]];
+        icon.imageScaling = NSImageScaleProportionallyUpOrDown;
+        icon.translatesAutoresizingMaskIntoConstraints = NO;
+        [icon.widthAnchor constraintEqualToConstant:38].active = YES;
+        [icon.heightAnchor constraintEqualToConstant:38].active = YES;
+        tile = icon;
+    } else {
+        CCIconTile *symbolTile = [CCIconTile tileWithSymbol:e.symbol size:38 radius:11 iconSize:16];
+        symbolTile.fill = ^NSColor *{ return SegmentColor(segment, 0.16); };
+        symbolTile.icon.colorBlock = ^NSColor *{ return SegmentColor(segment, 1); };
+        tile = symbolTile;
+    }
 
     // Names wrap onto a second line rather than lose letters.
     _name = [CCLabel text:@"" size:14 weight:NSFontWeightSemibold role:CCRoleText];
@@ -376,6 +569,7 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _accessPill = [CCPill pillWithText:@"" symbol:@"lock.shield" color:^NSColor *{ return CCTheme.warning; }
                                   soft:^NSColor *{ return CCTheme.warningSoft; }];
     _accessPill.hidden = !e.needsAccess;
+    _risk.hidden = IsAppRow(e);
     NSStackView *titleRow = CCHStack(@[ _name, _risk, _accessPill, CCSpacer() ], 8);
     titleRow.alignment = NSLayoutAttributeCenterY;
     _desc = Muted(@"", 12.5);
@@ -410,7 +604,12 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _copy = [CCButton buttonWithStyle:CCButtonGhost title:nil symbol:@"doc.on.doc"];
     _copy.locKey = @"insight.copyCommand";
     _copy.toolTip = e.command;
-    for (CCButton *b in @[ _clean, _copy ]) {
+    _grant = [CCButton buttonWithStyle:CCButtonGhost title:nil symbol:@"lock.shield"];
+    _grant.locKey = @"titlebar.runAsAdmin";
+    _grant.toolTip = L(@"titlebar.adminHint");
+    _grant.onClick = ^{ [M() openFullDiskAccessSettings]; };
+    _grant.hidden = ![e.identifier isEqualToString:@"mac.noaccess"];
+    for (CCButton *b in @[ _clean, _grant, _copy ]) {
         b.padding = NSEdgeInsetsMake(6, 10, 6, 10);
         b.fontSize = 12;
         b.symbolSize = 12;
@@ -421,6 +620,10 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _reveal.onClick = ^{ [M() revealPath:weak.entry.path]; };
     _trash = [CCButton buttonWithStyle:CCButtonIcon title:nil symbol:@"trash"];
     _trash.onClick = ^{ [weak askToConfirm]; };
+    _uninstall = [CCButton buttonWithStyle:CCButtonIcon title:nil symbol:@"trash"];
+    _uninstall.toolTip = L(@"disk.uninstall.tip");
+    _uninstall.hidden = !e.uninstallable;
+    _uninstall.onClick = ^{ [D() uninstall:weak.entry]; };
     _confirm = [CCButton buttonWithStyle:CCButtonDanger title:@"" symbol:@"trash"];
     _confirm.padding = NSEdgeInsetsMake(6, 12, 6, 12);
     _confirm.fontSize = 12.5;
@@ -439,7 +642,9 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     // Buttons sit at the trailing edge of a slot that always fits Show, Delete and the chevron, so the sizes line up
     // in one column whether or not a row has all three.
     NSStackView *actions = CCHStack(@[], 2);
-    [actions setViews:@[ _clean, _copy, _reveal, _trash, _confirm, _chevron ] inGravity:NSStackViewGravityTrailing];
+    [actions setViews:@[ _clean, _copy, _reveal, _uninstall, _trash, _confirm, _chevron ] inGravity:NSStackViewGravityTrailing];
+    [actions insertView:_grant atIndex:0 inGravity:NSStackViewGravityTrailing];
+    [actions setCustomSpacing:8 afterView:_grant];
     [actions setCustomSpacing:8 afterView:_clean];
     [actions setCustomSpacing:8 afterView:_copy];
     [actions.widthAnchor constraintGreaterThanOrEqualToConstant:3 * 34 + 2 * 2].active = YES;
@@ -506,6 +711,7 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _trash.hidden = !deletable || !_confirm.hidden;
     _trash.enabled = !busy;
     _confirm.enabled = !busy;
+    _uninstall.enabled = !busy && !D().analyzing;
     _chevron.hidden = e.children.count == 0;
     self.alphaValue = busy ? 0.6 : 1;
 
@@ -570,18 +776,78 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
 
 @end
 
+// ═════════════════════════════ a legend entry ═════════════════════════════
+
+/// A band's dot, name and size; clicking it narrows the list to that band.
+@interface CCLegendChip : CCBox
+@property (nonatomic) BOOL picked;
+@property (nonatomic, copy) void (^onClick)(void);
+- (instancetype)initWithContent:(NSView *)content;
+@end
+
+@implementation CCLegendChip {
+    NSTrackingArea *_tracking;
+    BOOL _hovered;
+}
+
+- (instancetype)initWithContent:(NSView *)content {
+    if ((self = [super initWithFrame:NSZeroRect])) {
+        self.radius = 9;
+        [self addSubview:content];
+        CCPin(content, self, NSEdgeInsetsMake(4, 8, 4, 8));
+        self.accessibilityElement = YES;
+        self.accessibilityRole = NSAccessibilityButtonRole;
+        [self applyFill];
+    }
+    return self;
+}
+
+- (void)applyFill {
+    BOOL picked = _picked, hovered = _hovered;
+    self.fill = ^NSColor *{ return picked ? CCTheme.accentSoft : hovered ? CCTheme.inset : NSColor.clearColor; };
+}
+
+- (void)setPicked:(BOOL)picked {
+    if (picked == _picked) return;
+    _picked = picked;
+    [self applyFill];
+}
+
+- (void)resetCursorRects { [self addCursorRect:self.bounds cursor:NSCursor.pointingHandCursor]; }
+- (void)mouseDown:(NSEvent *)event { if (self.onClick) self.onClick(); }
+- (BOOL)accessibilityPerformPress {
+    if (self.onClick) self.onClick();
+    return YES;
+}
+
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (_tracking) [self removeTrackingArea:_tracking];
+    _tracking = [[NSTrackingArea alloc] initWithRect:NSZeroRect
+                                             options:NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow | NSTrackingInVisibleRect
+                                               owner:self userInfo:nil];
+    [self addTrackingArea:_tracking];
+}
+- (void)mouseEntered:(NSEvent *)event { _hovered = YES; [self applyFill]; }
+- (void)mouseExited:(NSEvent *)event { _hovered = NO; [self applyFill]; }
+
+@end
+
 // ═════════════════════════════ the page ═════════════════════════════
 
 @implementation CCDiskPage {
     CCScrollPage *_scroll;
     NSView *_header;
     CCCard *_mapCard, *_listCard;
-    CCLabel *_subtitle, *_free, *_status, *_notice, *_safeText, *_listDesc;
-    CCButton *_analyze, *_removeSafe;
+    CCLabel *_subtitle, *_free, *_status, *_notice, *_safeText, *_listDesc, *_filterText, *_filterEmpty;
+    CCButton *_analyze, *_removeSafe, *_showAll;
+    CCPopupField *_drive;
+    NSStackView *_filterRow;
+    NSArray<CCVolume *> *_shownVolumes;
     CCSpinner *_spinner;
     CCSegmentBar *_bar;
     CCFlowView *_legend;
-    NSMutableArray<NSView *> *_legendItems;
+    NSMutableArray<CCLegendChip *> *_legendItems;
     NSMutableArray<CCLabel *> *_legendNames;
     NSMutableArray<CCCounter *> *_legendBytes;
     NSStackView *_safeGroup, *_rows;
@@ -606,7 +872,18 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _analyze = [CCButton buttonWithStyle:CCButtonPrimary title:@"" symbol:@"chart.pie"];
     _analyze.onClick = ^{ [D() toggleAnalyze]; };
     [_analyze.widthAnchor constraintGreaterThanOrEqualToConstant:190].active = YES;
-    NSStackView *header = CCHStack(@[ titles, CCSpacer(), _analyze ], 16);
+    // Which disk to map, when there is more than one.
+    _drive = [CCPopupField new];
+    // Wide enough for "Macintosh HD  ·  123.4 GB free".
+    NSLayoutConstraint *driveWidth = [_drive.widthAnchor constraintEqualToConstant:280];
+    driveWidth.priority = NSLayoutPriorityDefaultHigh + 1;
+    driveWidth.active = YES;
+    _drive.onSelect = ^(NSInteger index) {
+        NSArray<CCVolume *> *volumes = D().volumes;
+        if (index >= 0 && index < (NSInteger)volumes.count) [D() selectVolume:volumes[index]];
+    };
+    NSStackView *header = CCHStack(@[ titles, CCSpacer(), _drive, _analyze ], 16);
+    [header setCustomSpacing:12 afterView:_drive];
     [titles setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
     _header = header;
 
@@ -617,9 +894,11 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _bar = [CCSegmentBar new];
     _bar.roundedSegments = YES;
     CCSize(_bar, 0, 26);
+    _bar.onPick = ^(NSInteger segment) { [D() pickSegment:segment]; };
     _legend = [CCFlowView new];
-    _legend.hSpacing = 22;
-    _legend.vSpacing = 8;
+    // Each entry has its own padding for the click area.
+    _legend.hSpacing = 6;
+    _legend.vSpacing = 2;
     _legendItems = [NSMutableArray array];
     _legendNames = [NSMutableArray array];
     _legendBytes = [NSMutableArray array];
@@ -634,8 +913,10 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
         bytes.onRender = ^{ [legend itemsChanged]; };
         NSStackView *item = CCHStack(@[ dot, name, bytes ], 8);
         [item setCustomSpacing:7 afterView:name];
-        item.hidden = YES;
-        [_legendItems addObject:item];
+        CCLegendChip *chip = [[CCLegendChip alloc] initWithContent:item];
+        chip.onClick = ^{ [D() pickSegment:s]; };
+        chip.hidden = YES;
+        [_legendItems addObject:chip];
         [_legendNames addObject:name];
         [_legendBytes addObject:bytes];
     }
@@ -677,9 +958,26 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     listDesc.wraps = YES;
     _listDesc = listDesc;
     _rows = CCVStack(@[], 8);
-    NSStackView *list = CCVStack(@[ listTitle, listDesc, _rows ], 4);
+    // The band picked in the bar, with a way back to everything.
+    _filterText = [CCLabel text:@"" size:13 weight:NSFontWeightSemibold role:CCRoleText];
+    _showAll = [CCButton buttonWithStyle:CCButtonGhost title:nil symbol:@"xmark"];
+    _showAll.locKey = @"disk.filter.all";
+    _showAll.padding = NSEdgeInsetsMake(5, 10, 5, 10);
+    _showAll.fontSize = 12;
+    _showAll.symbolSize = 11;
+    _showAll.onClick = ^{ [D() clearFilter]; };
+    _filterRow = CCHStack(@[ _filterText, _showAll, CCSpacer() ], 12);
+    _filterRow.hidden = YES;
+    _filterEmpty = [CCLabel key:@"disk.filter.empty" size:12.5 weight:NSFontWeightRegular role:CCRoleMuted];
+    _filterEmpty.wraps = YES;
+    _filterEmpty.hidden = YES;
+    NSStackView *list = CCVStack(@[ listTitle, listDesc, _filterRow, _filterEmpty, _rows ], 4);
     [list setCustomSpacing:16 afterView:listDesc];
+    [list setCustomSpacing:12 afterView:_filterRow];
+    [list setCustomSpacing:12 afterView:_filterEmpty];
     Stretch(list, listDesc);
+    Stretch(list, _filterRow);
+    Stretch(list, _filterEmpty);
     Stretch(list, _rows);
     _listCard = [CCCard card];
     [_listCard addSubview:list];
@@ -716,11 +1014,26 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _analyze.symbol = analyzing ? @"stop" : @"chart.pie";
     _free.stringValue = r ? LF(@"disk.free", CCFormatBytes(r.free)) : @"";
 
+    NSArray<CCVolume *> *volumes = d.volumes;
+    NSMutableArray<NSString *> *driveNames = [NSMutableArray array];
+    for (CCVolume *v in volumes) [driveNames addObject:[NSString stringWithFormat:@"%@  ·  %@", v.name, LF(@"disk.free", CCFormatBytes(v.free))]];
+    if (![driveNames isEqualToArray:_drive.items]) _drive.items = driveNames;
+    NSInteger driveIndex = 0;
+    for (NSUInteger i = 0; i < volumes.count; i++)
+        if ([volumes[i].path isEqualToString:d.selectedVolume.path]) driveIndex = (NSInteger)i;
+    if (driveIndex != _drive.selectedIndex) _drive.selectedIndex = driveIndex;
+    _drive.hidden = volumes.count <= 1;
+    _drive.toolTip = L(@"disk.drive");
+    _bar.toolTip = L(@"disk.pickBand");
+
     NSMutableArray *weights = [NSMutableArray array], *colors = [NSMutableArray array];
     for (NSInteger s = 0; s < CCSpaceSegmentCount; s++) {
         long long bytes = r ? r.segments[s] : 0;
         [weights addObject:@(bytes)];
-        [colors addObject:SegmentColor(s, 1)];
+        BOOL dimmed = d.filter >= 0 && d.filter != s;
+        [colors addObject:SegmentColor(s, dimmed ? 0.22 : 1)];
+        _legendItems[s].picked = d.filter == s;
+        _legendItems[s].alphaValue = dimmed ? 0.45 : 1;
         _legendNames[s].stringValue = L([@"disk.seg." stringByAppendingString:CCSpaceSegmentName(s)]);
         _legendBytes[s].bytes = bytes;
         _legendItems[s].hidden = bytes <= 0;
@@ -729,7 +1042,7 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     [_bar setWeights:weights colors:colors];
     [_legend itemsChanged];
     _legend.hidden = !r;
-    _notice.hidden = !r || M().hasFullDiskAccess;
+    _notice.hidden = !r || M().hasFullDiskAccess || !d.selectedVolume.isHome;
 
     _status.stringValue = d.statusText;
     _spinner.hidden = !analyzing;
@@ -738,6 +1051,7 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     _safeGroup.hidden = !r || analyzing || safe <= 0;
 
     [self syncRows:r];
+    [self applyFilter:r];
     if (_listCard.hidden && r) {
         _listCard.hidden = NO;
         // Laid out while hidden, the description still wraps at its old width: measure it again once shown.
@@ -748,6 +1062,30 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
         });
     }
     _listCard.hidden = !r;
+}
+
+/// Only the rows of the band picked; a band no folder accounts for says so.
+- (void)applyFilter:(CCSpaceReport *)report {
+    NSInteger filter = D().filter;
+    BOOL any = NO;
+    for (CCDiskRow *row in _rows.arrangedSubviews) {
+        BOOL shown = filter < 0 || row.entry.segment == filter;
+        BOOL wasHidden = row.hidden;
+        row.hidden = !shown;
+        any |= shown;
+        // Laid out while hidden, its text still wraps at the old width.
+        if (shown && wasHidden) dispatch_async(dispatch_get_main_queue(), ^{ [row refresh]; });
+    }
+    _filterRow.hidden = filter < 0;
+    _filterText.stringValue = filter >= 0 ? LF(@"disk.filter", L([@"disk.seg." stringByAppendingString:CCSpaceSegmentName(filter)])) : @"";
+    BOOL wasEmptyHidden = _filterEmpty.hidden;
+    _filterEmpty.hidden = filter < 0 || any || !report;
+    if (wasEmptyHidden && !_filterEmpty.hidden)
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self->_listCard layoutSubtreeIfNeeded];
+            self->_filterEmpty.preferredMaxLayoutWidth = NSWidth(self->_filterEmpty.bounds);
+            [self->_filterEmpty invalidateIntrinsicContentSize];
+        });
 }
 
 - (void)syncRows:(CCSpaceReport *)report {

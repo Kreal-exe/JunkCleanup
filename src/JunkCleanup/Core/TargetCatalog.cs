@@ -291,6 +291,12 @@ public static class TargetCatalog
         },
         new()
         {
+            Id = "dev.projects", Category = TargetCategory.Developer, Glyph = GCode,
+            Risk = RiskLevel.Moderate, EnabledByDefault = false, RemovesRoots = true,
+            Finder = () => ProjectArtifacts.Find(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)),
+        },
+        new()
+        {
             Id = "dev.huggingface", Category = TargetCategory.Developer, Glyph = GBrain,
             Risk = RiskLevel.Careful, EnabledByDefault = false,
             RootPatterns = [@"%USERPROFILE%\.cache\huggingface\hub"],

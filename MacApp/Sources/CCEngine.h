@@ -198,6 +198,8 @@ NSString *CCSpaceRiskName(CCSpaceRisk risk);
 @property (nonatomic) BOOL needsAccess;
 /// Worked out once by the engine: one folder or file, not Keep, no command, not a cache target, not protected.
 @property (nonatomic) BOOL canDelete;
+/// An app in /Applications that can be uninstalled with its data.
+@property (nonatomic) BOOL uninstallable;
 @property (nonatomic, readonly) NSMutableArray<CCSpaceEntry *> *children;
 @property (nonatomic, readonly) NSString *path;
 @end
@@ -212,6 +214,24 @@ NSString *CCSpaceRiskName(CCSpaceRisk risk);
 @property (nonatomic, readonly) long long *segments;
 @property (nonatomic) double elapsed;
 @property (nonatomic, readonly) long long measured;
+@end
+
+/// A disk the Disk page can map: the startup disk or a mounted local drive.
+@interface CCVolume : NSObject
+/// Where it is mounted ("/", "/Volumes/980PRO").
+@property (nonatomic, copy, readonly) NSString *path;
+@property (nonatomic, copy, readonly) NSString *name;
+/// The file system ("apfs", "exfat", "msdos"…).
+@property (nonatomic, copy, readonly) NSString *format;
+@property (nonatomic, readonly) long long total, free;
+/// It holds the home folder.
+@property (nonatomic, readonly) BOOL isHome;
+/// exFAT or FAT: no journal, snapshots or index of their own, and every file takes whole clusters.
+@property (nonatomic, readonly) BOOL isFAT;
+/// The home disk first, then the other local disks that can be written to; no network shares or read-only images.
++ (NSArray<CCVolume *> *)mounted;
+/// The disk holding the path, or nil when it went away.
++ (nullable instancetype)volumeAtPath:(NSString *)path;
 @end
 
 /// A folder whose subfolders are each measured as an item.
@@ -233,13 +253,25 @@ NSString *CCSpaceRiskName(CCSpaceRisk risk);
 @property (nonatomic, copy) NSDictionary<NSString *, NSNumber *> *filed;
 /// The user's own folders: Files band, Keep.
 @property (nonatomic, copy) NSArray<NSString *> *personal;
+/// Folder names shown but never removed here, whatever their band (the file system's own folders at a drive's root).
+@property (nonatomic, copy) NSArray<NSString *> *keepNames;
 /// Never entered, never listed: other apps' sandbox containers (opening them makes macOS ask for permission).
 @property (nonatomic, copy) NSArray<NSString *> *skipped;
 /// Entered only with Full Disk Access (macOS asks or refuses otherwise); shown unmeasured without it.
 @property (nonatomic, copy) NSArray<NSString *> *guarded;
 @property (nonatomic) BOOL hasFullDiskAccess;
-/// The volume to report on (the one holding the home folder).
+/// The volume to report on.
 @property (nonatomic, copy) NSString *volumePath;
+/// Which known items and cache targets belong to the report: only those on the disk being mapped. Nil takes them all.
+@property (nonatomic, copy, nullable) BOOL (^includes)(NSString *path);
+/// Files at the top of this folder are listed too (a drive's root holds them as much as its folders do).
+@property (nonatomic, copy, nullable) NSString *looseFilesRoot;
+/// exFAT or FAT: each file counts as the whole clusters it takes.
+@property (nonatomic) long long clusterSize;
+/// The startup disk: lists macOS's own volumes and system folders, and with Full Disk Access other apps' containers.
+@property (nonatomic) BOOL listsSystemSpace;
+/// What is in use but no folder accounts for gets a row of its own, so the band's rows add up to the band.
+@property (nonatomic) BOOL namesUnaccounted;
 /// Discovered folders smaller than this fold into one "Smaller folders" entry per band.
 @property (nonatomic) long long smallFolder;
 @property (nonatomic, copy) NSString *folderSymbol, *personalSymbol, *cachesSymbol;
@@ -248,6 +280,21 @@ NSString *CCSpaceRiskName(CCSpaceRisk risk);
 @interface CCSpaceCatalog : NSObject
 + (NSArray<CCSpaceRule *> *)rules;
 + (CCSpaceScope *)scopeWithFullDiskAccess:(BOOL)fullDiskAccess;
+/// What to map on a disk: the home disk through the home folder, any other through the folders at its root.
++ (CCSpaceScope *)scopeForVolume:(CCVolume *)volume fullDiskAccess:(BOOL)fullDiskAccess;
+@end
+
+/// What an app leaves in the user's Library, for uninstalling it the way AppCleaner does.
+@interface CCAppLeftovers : NSObject
++ (nullable NSString *)bundleIdOfApp:(NSString *)appPath;
+/// A real .app with a bundle id; never Apple's own apps or JunkCleanup.
++ (BOOL)canUninstall:(NSString *)appPath;
+/// The app's folders and files under ~/Library: by bundle id, and by its exact name where apps use that. What belongs to
+/// another installed app (a Canary next to Chrome) is left out, and so is anything the path guard protects.
++ (NSArray<NSString *> *)leftoversOfApp:(NSString *)appPath otherApps:(NSArray<NSString *> *)otherApps;
+/// The apps in /Applications and ~/Applications.
++ (NSArray<NSString *> *)installedApps;
++ (BOOL)moveToTrash:(NSString *)path;
 @end
 
 /// Measures the disk: every known item (with its parts), every cache target, and every other folder under the scope's

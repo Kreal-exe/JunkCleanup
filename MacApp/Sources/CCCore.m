@@ -1,6 +1,8 @@
 #import "CCCore.h"
 #include <fnmatch.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <float.h>
 
 NSString *CCCategoryName(CCCategory category) {
     switch (category) {
@@ -158,12 +160,17 @@ NSArray<NSString *> *CCExpandPattern(NSString *pattern) {
 
 - (NSArray<NSString *> *)resolveRoots {
     NSMutableOrderedSet<NSString *> *roots = [NSMutableOrderedSet orderedSet];
-    for (NSString *pattern in self.rootPatterns) {
+    for (NSString *pattern in self.finder ? @[] : self.rootPatterns) {
         for (NSString *path in CCExpandPattern(pattern)) {
             NSString *normalized = [CCPathGuard normalize:path];
             if ([CCPathGuard isAllowedRoot:normalized]) [roots addObject:normalized];
         }
     }
+    if (self.finder)
+        for (NSString *path in self.finder()) {
+            NSString *normalized = [CCPathGuard normalize:path];
+            if ([CCPathGuard isAllowedRoot:normalized]) [roots addObject:normalized];
+        }
     if (self.keepsNewest && roots.count) {
         NSString *newest = roots.firstObject;
         for (NSString *root in roots)
@@ -178,6 +185,147 @@ NSArray<NSString *> *CCExpandPattern(NSString *pattern) {
 
 @end
 
+// ───────────── old projects' build folders ─────────────
+// A project is recognised by its own file (package.json, Cargo.toml…), and only the folders that file's tool
+// rebuilds are offered. A project with a file changed in the last 30 days is being worked on and left alone.
+
+static const NSTimeInterval ProjectIdle = 30 * 24 * 3600;
+static const NSInteger ProjectMaxDepth = 5, ActivityBudget = 4000;
+
+/// Each kind: the files that mark the project, then the folders its tool rebuilds.
+static NSArray<NSArray<NSArray<NSString *> *> *> *ProjectKinds(void) {
+    static NSArray *kinds;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        kinds = @[
+            @[ @[ @"package.json" ], @[ @"node_modules", @".next", @".nuxt", @".turbo", @".parcel-cache", @".svelte-kit", @".angular" ] ],
+            @[ @[ @"Cargo.toml" ], @[ @"target" ] ],
+            @[ @[ @"pom.xml" ], @[ @"target" ] ],
+            @[ @[ @"build.gradle", @"build.gradle.kts", @"settings.gradle", @"settings.gradle.kts" ], @[ @"build", @".gradle" ] ],
+            @[ @[ @"pyproject.toml", @"requirements.txt", @"setup.py", @"Pipfile" ],
+               @[ @".venv", @"venv", @".tox", @".nox", @".pytest_cache", @".mypy_cache", @".ruff_cache", @"__pycache__" ] ],
+            @[ @[ @"*.csproj", @"*.fsproj" ], @[ @"bin", @"obj" ] ],
+            @[ @[ @"pubspec.yaml" ], @[ @".dart_tool", @"build" ] ],
+            @[ @[ @"Package.swift" ], @[ @".build" ] ],
+            @[ @[ @"mix.exs" ], @[ @"_build", @"deps" ] ],
+        ];
+    });
+    return kinds;
+}
+
+static NSSet<NSString *> *ArtifactNames(void) {
+    static NSSet *names;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableSet *all = [NSMutableSet set];
+        for (NSArray *kind in ProjectKinds()) [all addObjectsFromArray:kind[1]];
+        names = all;
+    });
+    return names;
+}
+
+static BOOL IsRealDirectory(NSString *path) {
+    struct stat st;
+    return lstat(path.fileSystemRepresentation, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+/// When anything in the project other than its tools' output last changed (its own files and the git index).
+static NSTimeInterval ProjectActivity(NSString *project) {
+    NSTimeInterval newest = 0;
+    struct stat st;
+    if (lstat([project stringByAppendingPathComponent:@".git/index"].fileSystemRepresentation, &st) == 0)
+        newest = st.st_mtimespec.tv_sec;
+    NSInteger budget = ActivityBudget;
+    NSMutableArray<NSArray *> *stack = [NSMutableArray arrayWithObject:@[ project, @0 ]];
+    NSSet *artifacts = ArtifactNames();
+    while (stack.count && budget > 0) {
+        NSArray *top = stack.lastObject;
+        [stack removeLastObject];
+        NSString *dir = top[0];
+        NSInteger depth = [top[1] integerValue];
+        for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:dir error:nil] ?: @[]) {
+            if (--budget <= 0) break;
+            NSString *path = [dir stringByAppendingPathComponent:name];
+            if (lstat(path.fileSystemRepresentation, &st) != 0) continue;
+            if (S_ISDIR(st.st_mode)) {
+                if (depth < 3 && ![name hasPrefix:@"."] && ![artifacts containsObject:name]) [stack addObject:@[ path, @(depth + 1) ]];
+            } else if (S_ISREG(st.st_mode) && st.st_mtimespec.tv_sec > newest) {
+                newest = st.st_mtimespec.tv_sec;
+            }
+        }
+    }
+    // A project that could not be read at all counts as in use.
+    return newest > 0 ? newest : DBL_MAX;
+}
+
+static NSArray<NSString *> *CCFindProjectArtifacts(void) {
+    // A scan resolves every target's roots more than once: the answer is kept for a few seconds.
+    static NSArray *last;
+    static CFAbsoluteTime lastAt;
+    @synchronized ([CCTarget class]) {
+        if (last && CFAbsoluteTimeGetCurrent() - lastAt < 20) return last;
+    }
+
+    NSString *home = CCHomeDirectory();
+    NSTimeInterval idleSince = NSDate.date.timeIntervalSince1970 - ProjectIdle;
+    NSArray *folders = @[ @"Code", @"Projects", @"Developer", @"dev", @"src", @"repos", @"git", @"GitHub", @"Sites",
+                          @"source/repos", @"Documents/Code", @"Documents/Projects", @"Documents/GitHub", @"Documents/Developer" ];
+    NSMutableArray<NSString *> *found = [NSMutableArray array];
+    NSMutableSet<NSString *> *seen = [NSMutableSet set];
+    NSMutableArray<NSArray *> *queue = [NSMutableArray array];
+    for (NSString *folder in folders) {
+        NSString *root = [home stringByAppendingPathComponent:folder];
+        // "code" and "Code" are one folder on a case-insensitive disk: the real path tells them apart.
+        NSString *real = IsRealDirectory(root) ? root.stringByResolvingSymlinksInPath.lowercaseString : nil;
+        if (real && ![seen containsObject:real]) {
+            [seen addObject:real];
+            [queue addObject:@[ root, @0 ]];
+        }
+    }
+    NSSet *artifactNames = ArtifactNames();
+    for (NSUInteger i = 0; i < queue.count; i++) {
+        NSString *dir = queue[i][0];
+        NSInteger depth = [queue[i][1] integerValue];
+        NSMutableSet<NSString *> *files = [NSMutableSet set], *dirs = [NSMutableSet set];
+        for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:dir error:nil] ?: @[]) {
+            struct stat st;
+            if (lstat([dir stringByAppendingPathComponent:name].fileSystemRepresentation, &st) != 0) continue;
+            if (S_ISDIR(st.st_mode)) [dirs addObject:name];
+            else if (S_ISREG(st.st_mode)) [files addObject:name];
+        }
+
+        NSMutableOrderedSet<NSString *> *artifacts = [NSMutableOrderedSet orderedSet];
+        for (NSArray *kind in ProjectKinds()) {
+            BOOL isProject = NO;
+            for (NSString *marker in kind[0])
+                for (NSString *file in files)
+                    if (fnmatch(marker.UTF8String, file.UTF8String, 0) == 0) isProject = YES;
+            if (!isProject) continue;
+            for (NSString *name in kind[1]) {
+                if (![dirs containsObject:name]) continue;
+                // A generic name counts only when it holds what the tool puts there.
+                if (([name isEqualToString:@"venv"] || [name isEqualToString:@".venv"]) &&
+                    ![NSFileManager.defaultManager fileExistsAtPath:[dir stringByAppendingFormat:@"/%@/pyvenv.cfg", name]])
+                    continue;
+                [artifacts addObject:name];
+            }
+        }
+        if (artifacts.count && ProjectActivity(dir) < idleSince)
+            for (NSString *name in artifacts) [found addObject:[dir stringByAppendingPathComponent:name]];
+
+        if (depth >= ProjectMaxDepth) continue;
+        for (NSString *name in dirs)
+            if (![name hasPrefix:@"."] && ![artifactNames containsObject:name])
+                [queue addObject:@[ [dir stringByAppendingPathComponent:name], @(depth + 1) ]];
+    }
+
+    @synchronized ([CCTarget class]) {
+        last = [found copy];
+        lastAt = CFAbsoluteTimeGetCurrent();
+    }
+    return found;
+}
+
 static CCTarget *T(NSString *identifier, CCCategory category, NSString *symbol, CCRisk risk, NSArray<NSString *> *roots) {
     CCTarget *t = [CCTarget new];
     t.identifier = identifier;
@@ -190,6 +338,12 @@ static CCTarget *T(NSString *identifier, CCCategory category, NSString *symbol, 
 
 static CCTarget *Off(CCTarget *t) {
     t.enabledByDefault = NO;
+    return t;
+}
+
+static CCTarget *Projects(CCTarget *t) {
+    t.finder = ^{ return CCFindProjectArtifacts(); };
+    t.removesRoots = YES;
     return t;
 }
 
@@ -335,6 +489,7 @@ static NSArray *Join(NSArray *a, NSArray *b) { return [a arrayByAddingObjectsFro
             T(@"dev.jetbrains", CCCategoryDeveloper, @"curlybraces", CCRiskModerate,
               @[ [LC stringByAppendingString:@"/JetBrains"], @"~/Library/Logs/JetBrains" ]),
             Off(T(@"dev.playwright", CCCategoryDeveloper, @"theatermasks", CCRiskCareful, @[ [LC stringByAppendingString:@"/ms-playwright"] ])),
+            Off(Projects(T(@"dev.projects", CCCategoryDeveloper, @"hammer", CCRiskModerate, @[]))),
             Off(T(@"dev.huggingface", CCCategoryDeveloper, @"brain", CCRiskCareful, @[ @"~/.cache/huggingface/hub" ])),
             Off(T(@"dev.ollama", CCCategoryDeveloper, @"brain", CCRiskCareful, @[ @"~/.ollama/models" ])),
             Off(T(@"dev.lmstudio", CCCategoryDeveloper, @"brain", CCRiskCareful, @[ @"~/.lmstudio/models", @"~/.cache/lm-studio/models" ])),

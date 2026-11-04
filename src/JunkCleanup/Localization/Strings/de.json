@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "Komponentenmodell- und Erweiterungscaches.",
   "target.dev.playwright.name": "Playwright-Browser",
   "target.dev.playwright.desc": "Von Playwright heruntergeladene Browser-Binärdateien.",
+  "target.dev.projects.name": "Build-Ordner alter Projekte",
+  "target.dev.projects.desc": "node_modules, target, .venv, build und Ähnliches in Projekten, die seit 30 Tagen unverändert sind. npm install, cargo build oder pip holen sie zurück.",
   "target.dev.huggingface.name": "Hugging Face Hub",
   "target.dev.huggingface.desc": "Heruntergeladene Modelle und Datensätze. Können sehr groß sein.",
   "target.dev.android.name": "Android-Buildcache",

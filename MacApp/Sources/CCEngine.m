@@ -1,4 +1,5 @@
 #import "CCEngine.h"
+#include <sys/mount.h>
 #include <errno.h>
 #include <fnmatch.h>
 #include <fts.h>
@@ -542,6 +543,9 @@ static void PruneEmpty(NSString *dir, NSSet<NSString *> *keep, CCCancelToken *ca
         if (cancel.isCancelled) break;
         PruneEmpty(dir, scan.skippedRoots, cancel);
     }
+    // A root that is itself the junk (an old project's node_modules) goes too once it is empty.
+    if (scan.target.removesRoots && !options.dryRun)
+        for (NSString *root in roots) rmdir(root.fileSystemRepresentation);
 
     return finish();
 }
@@ -662,9 +666,74 @@ NSString *CCSpaceRiskName(CCSpaceRisk risk) {
 - (long long *)segments { return _segments; }
 - (long long)measured {
     long long sum = 0;
-    for (CCSpaceEntry *e in self.items) sum += e.bytes;
+    // These are what no file accounts for, not something that was measured.
+    for (CCSpaceEntry *e in self.items)
+        if (![@[ @"mac.noaccess", @"unknown" ] containsObject:e.identifier]) sum += e.bytes;
     return sum;
 }
+@end
+
+/// The allocation unit where each file takes whole clusters (exFAT, FAT); 0 elsewhere, where st_blocks is the truth
+/// (APFS files can be sparse or cloned).
+static long long ClusterSizeAt(NSString *path) {
+    struct statfs fs;
+    if (statfs(path.fileSystemRepresentation, &fs) != 0) return 0;
+    BOOL fat = strcasecmp(fs.f_fstypename, "exfat") == 0 || strcasecmp(fs.f_fstypename, "msdos") == 0;
+    return fat ? (long long)fs.f_bsize : 0;
+}
+
+@implementation CCVolume
+
+/// The mount point the home folder lives on. The startup disk's data volume counts as "/".
+static NSString *HomeMount(void) {
+    struct statfs fs;
+    if (statfs(CCHomeDirectory().fileSystemRepresentation, &fs) != 0) return @"/";
+    NSString *mount = [NSFileManager.defaultManager stringWithFileSystemRepresentation:fs.f_mntonname length:strlen(fs.f_mntonname)];
+    return [mount hasPrefix:@"/Volumes/"] ? mount : @"/";
+}
+
+static NSArray<NSURLResourceKey> *VolumeKeys(void) {
+    return @[ NSURLVolumeTotalCapacityKey, NSURLVolumeAvailableCapacityForImportantUsageKey, NSURLVolumeAvailableCapacityKey,
+              NSURLVolumeLocalizedNameKey, NSURLVolumeIsLocalKey, NSURLVolumeIsBrowsableKey, NSURLVolumeIsReadOnlyKey ];
+}
+
+- (instancetype)initWithURL:(NSURL *)url {
+    if ((self = [super init])) {
+        NSDictionary *v = [url resourceValuesForKeys:VolumeKeys() error:nil];
+        _path = url.path.length ? url.path : @"/";
+        _total = [v[NSURLVolumeTotalCapacityKey] longLongValue];
+        _free = [v[NSURLVolumeAvailableCapacityForImportantUsageKey] longLongValue] ?: [v[NSURLVolumeAvailableCapacityKey] longLongValue];
+        _name = [v[NSURLVolumeLocalizedNameKey] length] ? v[NSURLVolumeLocalizedNameKey] : _path.lastPathComponent;
+        _isHome = [_path isEqualToString:HomeMount()];
+        struct statfs fs;
+        _format = statfs(_path.fileSystemRepresentation, &fs) == 0 ? @(fs.f_fstypename) : @"";
+        _isFAT = [_format caseInsensitiveCompare:@"exfat"] == NSOrderedSame || [_format caseInsensitiveCompare:@"msdos"] == NSOrderedSame;
+    }
+    return self;
+}
+
++ (NSArray<CCVolume *> *)mounted {
+    NSMutableArray<CCVolume *> *list = [NSMutableArray array];
+    NSArray<NSURL *> *urls = [NSFileManager.defaultManager mountedVolumeURLsIncludingResourceValuesForKeys:VolumeKeys()
+                                                                                                   options:NSVolumeEnumerationSkipHiddenVolumes];
+    for (NSURL *url in urls) {
+        NSDictionary *v = [url resourceValuesForKeys:VolumeKeys() error:nil];
+        CCVolume *volume = [[CCVolume alloc] initWithURL:url];
+        if (volume.total <= 0) continue;
+        // The startup disk's system volume is sealed read-only; it stands for the disk the home folder is on.
+        if (!volume.isHome && (![v[NSURLVolumeIsLocalKey] boolValue] || ![v[NSURLVolumeIsBrowsableKey] boolValue] || [v[NSURLVolumeIsReadOnlyKey] boolValue])) continue;
+        if (volume.isHome) [list insertObject:volume atIndex:0];
+        else [list addObject:volume];
+    }
+    return list;
+}
+
++ (instancetype)volumeAtPath:(NSString *)path {
+    for (CCVolume *v in [self mounted])
+        if ([v.path isEqualToString:path]) return v;
+    return nil;
+}
+
 @end
 
 @implementation CCSpaceRoot
@@ -685,6 +754,7 @@ NSString *CCSpaceRiskName(CCSpaceRisk risk) {
         _containers = @[];
         _filed = @{};
         _personal = @[];
+        _keepNames = @[];
         _skipped = @[];
         _guarded = @[];
         _volumePath = CCHomeDirectory();
@@ -774,7 +844,7 @@ static CCSpaceRule *Guarded(CCSpaceRule *r) {
                     @"uv python list --only-installed && uv tool list"),
 
             // ── apps ──
-            Listed(Rule(@"mac.applications", CCSpaceApps, @"square.grid.2x2", CCSpaceRiskKeep, @[ @"/Applications" ]), @"app"),
+            Listed(Rule(@"mac.applications", CCSpaceApps, @"square.grid.2x2", CCSpaceRiskKeep, @[ @"/Applications", @"~/Applications" ]), @"app"),
 
             // ── system: belongs to root, so a command removes it ──
             Command(Rule(@"mac.aerial", CCSpaceSystem, @"photo.on.rectangle", CCSpaceRiskModerate, @[ aerial ]),
@@ -797,7 +867,7 @@ static CCSpaceRule *Guarded(CCSpaceRule *r) {
     // ~/Library first: its folders are items of their own, so it is never one big "Library" row under the home folder.
     scope.roots = @[
         [CCSpaceRoot pattern:@"~/Library" segment:CCSpaceApps keep:NO],
-        [CCSpaceRoot pattern:@"~" segment:CCSpaceOther keep:NO],
+        [CCSpaceRoot pattern:@"~" segment:CCSpaceFiles keep:NO],
         [CCSpaceRoot pattern:@"/Library/Application Support" segment:CCSpaceSystem keep:YES],
     ];
     scope.containers = @[ @"~/Library/Application Support", @"~/Library/Developer", @"~/.cache", @"~/.local", @"~/.config" ];
@@ -814,13 +884,47 @@ static CCSpaceRule *Guarded(CCSpaceRule *r) {
     // Opening another app's sandbox container makes macOS 15 ask "would like to access data from other apps": they are
     // never entered, and what they hold stays in "System and other".
     scope.skipped = @[ @"~/Library/Containers", @"~/Library/Group Containers" ];
-    // Desktop, Documents, Downloads and iCloud Drive make macOS ask for each folder; mail and messages are refused.
-    scope.guarded = @[ @"~/Desktop", @"~/Documents", @"~/Downloads", @"~/Library/Mobile Documents", @"~/Library/CloudStorage",
+    // Desktop, Documents, Downloads, Pictures, Music, Movies, contacts and iCloud Drive make macOS ask for each one; mail
+    // and messages are refused. None is opened until Full Disk Access covers them all with one switch.
+    scope.guarded = @[ @"~/Desktop", @"~/Documents", @"~/Downloads", @"~/Pictures", @"~/Music", @"~/Movies",
+                       @"~/Library/Photos", @"~/Library/Application Support/AddressBook", @"~/Library/Application Support/CallHistoryDB",
+                       @"~/Library/Application Support/Knowledge", @"~/Library/Mobile Documents", @"~/Library/CloudStorage",
                        @"~/Library/Mail", @"~/Library/Messages", @"~/Library/Safari", @"~/Library/Calendars",
                        @"~/Library/Reminders", @"~/Library/Cookies", @"~/Library/HomeKit", @"~/Library/IdentityServices",
                        @"~/Library/Suggestions", @"~/Library/Metadata/CoreSpotlight" ];
     scope.hasFullDiskAccess = fullDiskAccess;
     scope.volumePath = CCHomeDirectory();
+    return scope;
+}
+
++ (CCSpaceScope *)scopeForVolume:(CCVolume *)volume fullDiskAccess:(BOOL)fullDiskAccess {
+    NSString *root = volume.path;
+    NSString *inside = [root stringByAppendingString:@"/"];
+    if (volume.isHome) {
+        CCSpaceScope *scope = [self scopeWithFullDiskAccess:fullDiskAccess];
+        // A custom folder on another drive belongs to that drive's map.
+        scope.listsSystemSpace = YES;
+        scope.namesUnaccounted = YES;
+        if (![root isEqualToString:@"/"]) scope.includes = ^BOOL(NSString *path) { return [path hasPrefix:inside] || ![path hasPrefix:@"/Volumes/"]; };
+        else scope.includes = ^BOOL(NSString *path) { return ![path hasPrefix:@"/Volumes/"]; };
+        return scope;
+    }
+    CCSpaceScope *scope = [CCSpaceScope new];
+    scope.rules = [self rules];
+    scope.includes = ^BOOL(NSString *path) { return [path hasPrefix:inside]; };
+    scope.roots = @[ [CCSpaceRoot pattern:root segment:CCSpaceFiles keep:NO] ];
+    // The file system's own folders, here or left by Windows, are shown and never removed.
+    NSArray *system = @[ @".Trashes", @".Spotlight-V100", @".fseventsd", @".TemporaryItems", @".DocumentRevisions-V100", @".PKInstallSandboxManager",
+                         @"$RECYCLE.BIN", @"System Volume Information", @"Recovery" ];
+    NSMutableDictionary *filed = [NSMutableDictionary dictionary];
+    for (NSString *name in system) filed[[root stringByAppendingPathComponent:name]] = @(CCSpaceSystem);
+    scope.filed = filed;
+    scope.keepNames = system;
+    scope.hasFullDiskAccess = fullDiskAccess;
+    scope.volumePath = root;
+    scope.looseFilesRoot = root;
+    scope.namesUnaccounted = YES;
+    if (volume.isFAT) scope.clusterSize = ClusterSizeAt(root);
     return scope;
 }
 
@@ -846,6 +950,9 @@ static BOOL IsLink(NSString *path) {
 
 /// Existing folders a pattern names; links are left out (what they point to is measured where it lives).
 static NSArray<NSString *> *ExpandFolders(NSString *pattern) {
+    // A path that exists as written is itself, even with a bracket in a drive's name.
+    struct stat literal;
+    if ([pattern hasPrefix:@"/"] && lstat(pattern.fileSystemRepresentation, &literal) == 0) return S_ISLNK(literal.st_mode) ? @[] : @[ pattern ];
     NSMutableArray *result = [NSMutableArray array];
     for (NSString *p in CCExpandPattern(pattern))
         if (!IsLink(p)) [result addObject:p];
@@ -862,11 +969,21 @@ static NSArray<NSString *> *SubFolders(NSString *root) {
     return result;
 }
 
+/// What a file takes on disk. Where files take whole clusters, its length rounded up to them: a file system without
+/// real block counts would otherwise read short, and half a million small files on exFAT take tens of gigabytes more
+/// than their content.
+static long long OnDisk(const struct stat *st, long long cluster) {
+    long long allocated = (long long)st->st_blocks * 512;
+    if (cluster <= 0) return allocated;
+    long long length = MAX(allocated, (long long)st->st_size);
+    return (length + cluster - 1) / cluster * cluster;
+}
+
 static long long MeasureTree(NSString *path, NSSet<NSString *> *excluded, NSArray<NSString *> *excludedNames,
-                             CCCancelToken *cancel, BOOL *unreadable) {
+                             long long cluster, CCCancelToken *cancel, BOOL *unreadable) {
     struct stat st;
     if (lstat(path.fileSystemRepresentation, &st) != 0) return 0;
-    if (S_ISREG(st.st_mode)) return (long long)st.st_blocks * 512;
+    if (S_ISREG(st.st_mode)) return OnDisk(&st, cluster);
     if (!S_ISDIR(st.st_mode)) return 0;
 
     char *paths[] = { (char *)path.fileSystemRepresentation, NULL };
@@ -898,7 +1015,7 @@ static long long MeasureTree(NSString *path, NSSet<NSString *> *excluded, NSArra
                     if ([linked containsObject:inode]) break;
                     [linked addObject:inode];
                 }
-                bytes += (long long)e->fts_statp->st_blocks * 512;
+                bytes += OnDisk(e->fts_statp, cluster);
                 break;
             case FTS_DNR:
             case FTS_ERR:
@@ -912,6 +1029,45 @@ static long long MeasureTree(NSString *path, NSSet<NSString *> *excluded, NSArra
     }
     fts_close(fts);
     return bytes;
+}
+
+/// What each of macOS's own volumes takes (the system, Preboot, Recovery, VM…): every volume but the data one in the
+/// startup disk's APFS container. statfs reports the whole container's figures for each, so diskutil is asked; it needs no
+/// rights and opens nothing. Empty if it cannot answer in time, and the space then stays in the unaccounted row.
+static NSDictionary<NSString *, NSNumber *> *SystemVolumes(void) {
+    struct statfs data;
+    if (statfs("/System/Volumes/Data", &data) != 0) return @{};
+    NSString *device = @(data.f_mntfromname).lastPathComponent;
+
+    NSTask *task = [NSTask new];
+    task.executableURL = [NSURL fileURLWithPath:@"/usr/sbin/diskutil"];
+    task.arguments = @[ @"apfs", @"list", @"-plist" ];
+    NSPipe *pipe = [NSPipe pipe];
+    task.standardOutput = pipe;
+    task.standardError = NSFileHandle.fileHandleWithNullDevice;
+    if (![task launchAndReturnError:nil]) return @{};
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        if (task.isRunning) [task terminate];
+    });
+    NSData *output = [pipe.fileHandleForReading readDataToEndOfFile];
+    [task waitUntilExit];
+    NSDictionary *list = output.length ? [NSPropertyListSerialization propertyListWithData:output options:0 format:nil error:nil] : nil;
+    if (![list isKindOfClass:NSDictionary.class]) return @{};
+
+    for (NSDictionary *container in list[@"Containers"]) {
+        NSArray<NSDictionary *> *volumes = container[@"Volumes"];
+        BOOL startup = NO;
+        for (NSDictionary *v in volumes) startup |= [v[@"DeviceIdentifier"] isEqual:device];
+        if (!startup) continue;
+        NSMutableDictionary *sizes = [NSMutableDictionary dictionary];
+        for (NSDictionary *v in volumes) {
+            long long used = [v[@"CapacityInUse"] longLongValue];
+            if ([v[@"DeviceIdentifier"] isEqual:device] || used <= 0 || [v[@"Name"] length] == 0) continue;
+            sizes[v[@"Name"]] = @(used);
+        }
+        return sizes;
+    }
+    return @{};
 }
 
 static CCSpaceEntry *SpaceEntry(NSString *identifier, CCSpaceSegment segment, CCSpaceRisk risk, NSString *symbol,
@@ -937,6 +1093,112 @@ static NSString *FixedPrefix(NSString *pattern) {
     return [fixed componentsJoinedByString:@"/"];
 }
 
+@implementation CCAppLeftovers
+
++ (NSString *)bundleIdOfApp:(NSString *)appPath {
+    NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[appPath stringByAppendingPathComponent:@"Contents/Info.plist"]];
+    NSString *identifier = info[@"CFBundleIdentifier"];
+    return [identifier isKindOfClass:NSString.class] && identifier.length ? identifier : nil;
+}
+
++ (BOOL)canUninstall:(NSString *)appPath {
+    if (![appPath hasSuffix:@".app"] || ![CCPathGuard isAllowedRoot:appPath] || IsLink(appPath)) return NO;
+    NSString *identifier = [self bundleIdOfApp:appPath];
+    if (!identifier) return NO;
+    return ![identifier hasPrefix:@"com.apple."] && ![identifier hasPrefix:@"io.github.kreal-exe."];
+}
+
+/// Every app bundle in /Applications and ~/Applications, also inside folders there (Utilities, a vendor's folder,
+/// Chrome's web apps), two levels deep; never inside another app.
++ (NSArray<NSString *> *)installedApps {
+    NSMutableArray *apps = [NSMutableArray array];
+    NSMutableArray<NSArray *> *queue = [NSMutableArray array];
+    for (NSString *folder in @[ @"/Applications", [CCHomeDirectory() stringByAppendingPathComponent:@"Applications"] ])
+        [queue addObject:@[ folder, @0 ]];
+    for (NSUInteger i = 0; i < queue.count; i++) {
+        NSString *folder = queue[i][0];
+        NSInteger depth = [queue[i][1] integerValue];
+        for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:folder error:nil]) {
+            if ([name hasPrefix:@"."]) continue;
+            NSString *path = [folder stringByAppendingPathComponent:name];
+            BOOL isDir = NO;
+            if ([name hasSuffix:@".app"]) [apps addObject:path];
+            else if (depth < 2 && !IsLink(path) && [NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&isDir] && isDir) [queue addObject:@[ path, @(depth + 1) ]];
+        }
+    }
+    return apps;
+}
+
+/// "com.foo.app", "com.foo.app.helper", "com.foo.app.plist", "com.foo.app.savedState" and the like.
+static BOOL NamedAfterId(NSString *name, NSString *identifier) {
+    NSString *lower = name.lowercaseString, *wanted = identifier.lowercaseString;
+    return [lower isEqualToString:wanted] || [lower hasPrefix:[wanted stringByAppendingString:@"."]];
+}
+
++ (NSArray<NSString *> *)leftoversOfApp:(NSString *)appPath otherApps:(NSArray<NSString *> *)otherApps {
+    NSString *identifier = [self bundleIdOfApp:appPath];
+    if (!identifier || identifier.length < 5) return @[];
+    NSString *library = [CCHomeDirectory() stringByAppendingPathComponent:@"Library"];
+
+    NSMutableArray<NSString *> *otherIds = [NSMutableArray array];
+    NSMutableSet<NSString *> *otherNames = [NSMutableSet set];
+    for (NSString *other in otherApps) {
+        if ([other isEqualToString:appPath]) continue;
+        NSString *otherId = [self bundleIdOfApp:other];
+        if (otherId) [otherIds addObject:otherId];
+        [otherNames addObject:other.lastPathComponent.stringByDeletingPathExtension.lowercaseString];
+    }
+    // Longer ids of other apps own what they name: com.google.Chrome.canary is not Chrome's.
+    BOOL (^othersOwn)(NSString *) = ^BOOL(NSString *name) {
+        for (NSString *otherId in otherIds)
+            if (otherId.length >= identifier.length && NamedAfterId(name, otherId)) return YES;
+        return NO;
+    };
+
+    NSMutableOrderedSet<NSString *> *found = [NSMutableOrderedSet orderedSet];
+    void (^add)(NSString *) = ^(NSString *path) {
+        if ([CCPathGuard isAllowedRoot:path] && !IsLink(path)) [found addObject:path];
+    };
+    NSFileManager *fm = NSFileManager.defaultManager;
+    for (NSString *folder in @[ @"Application Support", @"Caches", @"Preferences", @"Preferences/ByHost", @"Saved Application State", @"Logs",
+                                @"HTTPStorages", @"WebKit", @"Containers", @"Application Scripts", @"Cookies", @"LaunchAgents" ]) {
+        NSString *base = [library stringByAppendingPathComponent:folder];
+        for (NSString *name in [fm contentsOfDirectoryAtPath:base error:nil])
+            if (NamedAfterId(name, identifier) && !othersOwn(name)) add([base stringByAppendingPathComponent:name]);
+    }
+    // Group containers carry a team or "group." in front of the id.
+    NSString *groups = [library stringByAppendingPathComponent:@"Group Containers"];
+    NSString *suffix = [@"." stringByAppendingString:identifier.lowercaseString];
+    for (NSString *name in [fm contentsOfDirectoryAtPath:groups error:nil])
+        if ([name.lowercaseString hasSuffix:suffix]) add([groups stringByAppendingPathComponent:name]);
+
+    // By name: only the exact name, only where apps keep folders under it, and never one another app is called.
+    NSMutableOrderedSet<NSString *> *names = [NSMutableOrderedSet orderedSetWithObject:appPath.lastPathComponent.stringByDeletingPathExtension];
+    NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[appPath stringByAppendingPathComponent:@"Contents/Info.plist"]];
+    if ([info[@"CFBundleName"] isKindOfClass:NSString.class]) [names addObject:info[@"CFBundleName"]];
+    for (NSString *folder in @[ @"Application Support", @"Caches", @"Logs" ]) {
+        NSString *base = [library stringByAppendingPathComponent:folder];
+        NSArray *present = [fm contentsOfDirectoryAtPath:base error:nil];
+        for (NSString *name in names) {
+            if (name.length < 3 || [otherNames containsObject:name.lowercaseString]) continue;
+            for (NSString *item in present)
+                if ([item caseInsensitiveCompare:name] == NSOrderedSame) add([base stringByAppendingPathComponent:item]);
+            // "Google Chrome" keeps its data in Google/Chrome; the vendor's folder itself stays.
+            NSRange space = [name rangeOfString:@" "];
+            if (space.location != NSNotFound && space.location > 0) {
+                NSString *inner = [[base stringByAppendingPathComponent:[name substringToIndex:space.location]]
+                                   stringByAppendingPathComponent:[name substringFromIndex:space.location + 1]];
+                if ([fm fileExistsAtPath:inner]) add(inner);
+            }
+        }
+    }
+    return found.array;
+}
+
++ (BOOL)moveToTrash:(NSString *)path { return MoveToTrash(path); }
+
+@end
+
 static BOOL EntryCanDelete(CCSpaceEntry *e) {
     return e.risk != CCSpaceRiskKeep && !e.command && !e.targetId && !e.needsAccess && e.paths.count == 1
         && [CCPathGuard isAllowedRoot:e.paths.firstObject];
@@ -945,7 +1207,7 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
 @implementation CCDiskMapEngine
 
 + (long long)measure:(NSString *)path excluding:(NSSet<NSString *> *)excluded cancel:(CCCancelToken *)cancel unreadable:(BOOL *)unreadable {
-    return MeasureTree(path, excluded ?: [NSSet set], nil, cancel, unreadable);
+    return MeasureTree(path, excluded ?: [NSSet set], nil, ClusterSizeAt(path), cancel, unreadable);
 }
 
 - (CCSpaceReport *)analyze:(CCSpaceScope *)scope
@@ -964,6 +1226,7 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
     NSMutableArray<CCSpaceEntry *> *entries = [NSMutableArray array];
     NSMutableSet<NSString *> *claimed = [NSMutableSet set];
     BOOL (^taken)(NSString *) = ^BOOL(NSString *p) { return WithinAny(p, claimed); };
+    BOOL (^included)(NSString *) = ^BOOL(NSString *p) { return !scope.includes || scope.includes(p); };
 
     // 0. Folders that are never entered (other apps' containers), and without Full Disk Access the guarded ones.
     NSMutableSet<NSString *> *guarded = [NSMutableSet set], *private = [NSMutableSet set];
@@ -976,7 +1239,7 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
         NSMutableArray<NSString *> *paths = [NSMutableArray array];
         for (NSString *pattern in rule.paths)
             for (NSString *p in ExpandFolders(pattern))
-                if (!taken(p) && ![paths containsObject:p]) [paths addObject:p];
+                if (included(p) && !taken(p) && ![paths containsObject:p]) [paths addObject:p];
         if (paths.count == 0) continue;
         [claimed addObjectsFromArray:paths];
 
@@ -1016,6 +1279,19 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
                     }
                 }
             }
+            // Apps are listed one row per app bundle, wherever it sits in the Applications folders (Utilities, a vendor's folder).
+            if ([rule.listKind isEqualToString:@"app"]) {
+                [listed removeAllObjects];
+                for (NSString *app in [CCAppLeftovers installedApps]) {
+                    NSString *real = [CCPathGuard normalize:app];
+                    if ([claimed containsObject:real] || IsLink(app)) continue;
+                    BOOL inside = NO;
+                    for (NSString *root in paths) inside |= IsInsidePath(real, root);
+                    if (!inside) continue;
+                    [listed addObject:real];
+                    names[real] = app.lastPathComponent;
+                }
+            }
             // One match is the item itself, not a part of it.
             if (listed.count == 1 && paths.count == 1 && [listed.firstObject isEqualToString:paths.firstObject]) [listed removeAllObjects];
             for (NSString *p in listed)
@@ -1039,7 +1315,7 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
     for (NSArray *pair in rootsByTarget) {
         NSString *root = pair[0];
         CCTarget *target = pair[1];
-        if (taken(root) || [guarded containsObject:root] || IsLink(root)) continue;
+        if (!included(root) || taken(root) || [guarded containsObject:root] || IsLink(root)) continue;
         [claimed addObject:root];
         NSMutableArray *list = targetRoots[target.identifier] ?: (targetRoots[target.identifier] = [NSMutableArray array]);
         [list addObject:root];
@@ -1079,18 +1355,67 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
         for (NSString *rootPath in ExpandFolders(root.pattern)) {
             for (NSString *dir in SubFolders(rootPath)) {
                 if ([claimed containsObject:dir] || [rootPaths containsObject:dir]) continue;
-                BOOL isPersonal = [personal containsObject:dir];
+                // A root filed as Your files (the home folder, a drive's root) holds the user's own folders, except those
+                // the scope files elsewhere and dot folders, which are tools' data.
+                BOOL isDot = [dir.lastPathComponent hasPrefix:@"."];
+                BOOL isPersonal = [personal containsObject:dir] || (root.segment == CCSpaceFiles && !isDot && !filed[dir]);
                 // Mail, Messages, Safari and the like stay out of the list (and in "System and other") until they can be read.
                 if ([guarded containsObject:dir] && !isPersonal) continue;
-                CCSpaceSegment band = isPersonal ? CCSpaceFiles : filed[dir] ? (CCSpaceSegment)filed[dir].integerValue : root.segment;
-                CCSpaceEntry *entry = discovered(dir, band, isPersonal, root.keep);
+                CCSpaceSegment band = isPersonal ? CCSpaceFiles : filed[dir] ? (CCSpaceSegment)filed[dir].integerValue
+                                    : root.segment == CCSpaceFiles ? CCSpaceOther : root.segment;
+                BOOL keep = root.keep || [scope.keepNames containsObject:dir.lastPathComponent];
+                CCSpaceEntry *entry = discovered(dir, band, isPersonal, keep);
                 if ([containers containsObject:dir] && !entry.needsAccess)
                     for (NSString *sub in SubFolders(dir))
                         if (![claimed containsObject:sub] && ![guarded containsObject:sub])
-                            [entry.children addObject:discovered(sub, band, isPersonal, root.keep)];
+                            [entry.children addObject:discovered(sub, band, isPersonal, keep)];
                 [entries addObject:entry];
                 [claimed addObject:dir];
             }
+        }
+    }
+    // Files lying at a drive's root are its owner's too; without them they would pass for lost space.
+    CCSpaceEntry *loose = nil;
+    if (scope.looseFilesRoot) {
+        long long sum = 0;
+        for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:scope.looseFilesRoot error:nil]) {
+            struct stat st;
+            NSString *path = [scope.looseFilesRoot stringByAppendingPathComponent:name];
+            if (lstat(path.fileSystemRepresentation, &st) == 0 && S_ISREG(st.st_mode)) sum += OnDisk(&st, scope.clusterSize);
+        }
+        if (sum > 0) {
+            loose = SpaceEntry(@"loose", CCSpaceFiles, CCSpaceRiskKeep, scope.personalSymbol, @"space.personal",
+                               scope.looseFilesRoot.lastPathComponent, @[]);
+            loose.bytes = sum;
+            [entries addObject:loose];
+        }
+    }
+    // What the System band holds on the startup disk, so it is not one unexplained number.
+    NSMutableSet<CCSpaceEntry *> *known = [NSMutableSet set];
+    if (loose) [known addObject:loose];
+    if (scope.listsSystemSpace) {
+        NSDictionary<NSString *, NSNumber *> *sizes = SystemVolumes();
+        if (sizes.count) {
+            CCSpaceEntry *volumes = SpaceEntry(@"mac.sysvolumes", CCSpaceSystem, CCSpaceRiskKeep, @"laptopcomputer", @"space.mac.sysvolumes", nil, @[]);
+            for (NSString *name in sizes) {
+                [volumes.children addObject:SpaceEntry([@"mac.sysvolumes/" stringByAppendingString:name], CCSpaceSystem, CCSpaceRiskKeep,
+                                                       @"laptopcomputer", nil, name, @[])];
+                volumes.children.lastObject.bytes = sizes[name].longLongValue;
+                volumes.bytes += sizes[name].longLongValue;
+            }
+            [known addObject:volumes];
+            [entries addObject:volumes];
+        }
+        NSMutableArray<NSString *> *folders = [NSMutableArray array];
+        for (NSString *p in @[ @"/Library", @"/private", @"/opt", @"/usr/local" ]) [folders addObjectsFromArray:ExpandFolders(p)];
+        if (folders.count)
+            [entries addObject:SpaceEntry(@"mac.sysfolders", CCSpaceSystem, CCSpaceRiskKeep, @"gearshape", @"space.mac.sysfolders", nil, folders)];
+        // Other apps' containers are opened only with the access that lets the app read them without macOS asking.
+        if (scope.hasFullDiskAccess) {
+            NSMutableArray<NSString *> *containers = [NSMutableArray array];
+            for (NSString *pattern in scope.skipped) [containers addObjectsFromArray:ExpandFolders(pattern)];
+            if (containers.count)
+                [entries addObject:SpaceEntry(@"mac.appcontainers", CCSpaceSystem, CCSpaceRiskKeep, @"shippingbox", @"space.mac.appcontainers", nil, containers)];
         }
     }
     // Guarded folders are left out of whatever holds them, measured or not.
@@ -1100,7 +1425,7 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
     NSMutableArray<CCSpaceEntry *> *all = [NSMutableArray array];
     NSMapTable<CCSpaceEntry *, NSSet<NSString *> *> *siblings = [NSMapTable strongToStrongObjectsMapTable];
     for (CCSpaceEntry *e in entries) {
-        if (e.needsAccess) continue;
+        if (e.needsAccess || [known containsObject:e]) continue;
         if (e != caches) [all addObject:e];
         NSMutableSet *parts = [NSMutableSet set];
         for (CCSpaceEntry *c in e.children) [parts addObjectsFromArray:c.paths];
@@ -1122,7 +1447,7 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
         NSSet *excluded = extra ? [owned setByAddingObjectsFromSet:extra] : owned;
         long long bytes = 0;
         BOOL unreadable = NO;
-        for (NSString *p in entry.paths) bytes += MeasureTree(p, excluded, entry.excludedNames, cancel, &unreadable);
+        for (NSString *p in entry.paths) bytes += MeasureTree(p, excluded, entry.excludedNames, scope.clusterSize, cancel, &unreadable);
         entry.bytes = bytes;
         entry.unreadable = unreadable;
         if (progress) progress(entry.path);
@@ -1164,6 +1489,7 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
         e.canDelete = EntryCanDelete(e);
         for (CCSpaceEntry *c in e.children) {
             c.canDelete = EntryCanDelete(c);
+            c.uninstallable = [e.identifier isEqualToString:@"mac.applications"] && [CCAppLeftovers canUninstall:c.path];
             for (CCSpaceEntry *g in c.children) g.canDelete = EntryCanDelete(g);
         }
     }
@@ -1172,7 +1498,18 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
     [report.items addObjectsFromArray:entries];
     for (CCSpaceEntry *e in entries) report.segments[e.segment] += e.bytes;
     // Used but not measured: the operating system, swap, snapshots and whatever could not be read.
-    report.segments[CCSpaceSystem] += MAX(0, report.used - report.measured);
+    long long unaccounted = MAX(0, report.used - report.measured);
+    report.segments[CCSpaceSystem] += unaccounted;
+    if (scope.namesUnaccounted && unaccounted > 0) {
+        // Without Full Disk Access this is mostly the closed folders; with it, what macOS itself keeps out of reach.
+        BOOL closed = scope.listsSystemSpace && !scope.hasFullDiskAccess;
+        CCSpaceEntry *row = closed ? SpaceEntry(@"mac.noaccess", CCSpaceSystem, CCSpaceRiskKeep, @"lock.shield", @"space.mac.noaccess", nil, @[])
+                                   : SpaceEntry(@"unknown", CCSpaceSystem, CCSpaceRiskKeep, @"questionmark.circle", @"space.unknown", nil, @[]);
+        row.bytes = unaccounted;
+        NSUInteger at = 0;
+        while (at < report.items.count && report.items[at].bytes >= unaccounted) at++;
+        [report.items insertObject:row atIndex:at];
+    }
     report.elapsed = CFAbsoluteTimeGetCurrent() - start;
     return report;
 }
@@ -1190,7 +1527,7 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
                  : RemoveFile(path);
     if (removed || lstat(path.fileSystemRepresentation, &st) != 0) return entry.bytes;
     // Partly removed: what is left stays counted.
-    long long left = MeasureTree(path, [NSSet set], nil, nil, NULL);
+    long long left = MeasureTree(path, [NSSet set], nil, ClusterSizeAt(path), nil, NULL);
     return MAX(0, entry.bytes - left);
 }
 

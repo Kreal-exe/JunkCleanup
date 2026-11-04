@@ -71,7 +71,10 @@ static BOOL HasFullDiskAccess(void) {
     self.topEntries = @[];
 }
 
+- (BOOL)isTrash { return self.target.alwaysPermanent; }
+
 - (void)applyResult:(CCScanResult *)result {
+    _hasLeftovers = NO;
     self.lastResult = result;
     if (result.roots.count) self.roots = result.roots;
     self.bytes = result.totalBytes;
@@ -85,6 +88,7 @@ static BOOL HasFullDiskAccess(void) {
 }
 
 - (void)applyClean:(CCTargetCleanResult *)clean {
+    _hasLeftovers = clean.bytesRemaining > 0;
     self.bytes = clean.bytesRemaining;
     self.fileCount = clean.filesRemaining;
     self.topEntries = @[];
@@ -125,7 +129,8 @@ static BOOL HasFullDiskAccess(void) {
     NSInteger present = 0;
     BOOL anyEnabled = NO;
     for (CCTargetItem *t in self.targets) {
-        if (!t.isPresent) continue;
+        // The Trash is shown on its own line of the dashboard, not as junk of its category.
+        if (!t.isPresent || t.isTrash) continue;
         present++;
         bytes += t.bytes;
         files += t.fileCount;
@@ -150,6 +155,7 @@ static BOOL HasFullDiskAccess(void) {
 @property (nonatomic, readwrite) BOOL scanning, hasResults, nothingFound, overlayVisible, cleaning, cleanDone, cleanStopping, hasFullDiskAccess;
 @property (nonatomic, readwrite) NSString *statusText, *currentTargetName, *cleanCurrent, *cleanSummary, *diskName;
 @property (nonatomic, readwrite) long long displayBytes, foundBytes, selectedBytes, diskUsed, diskTotal, diskFree, lifetimeFreed, cleanFreed;
+@property (nonatomic, readwrite) long long trashBytes;
 @property (nonatomic, readwrite) NSInteger selectedCount, presentCount;
 @property (nonatomic, readwrite) double ringAngle, cleanProgress;
 @end
@@ -276,7 +282,46 @@ static BOOL HasFullDiskAccess(void) {
         || [t.rootsText rangeOfString:q options:o].location != NSNotFound;
 }
 
-- (BOOL)canClean { return self.hasResults && !self.scanning && !self.cleaning && self.selectedBytes > 0; }
+/// Selected targets with something in them. What a clean could not remove is left out until the next scan: pressing
+/// Clean again would not remove it either.
+- (NSArray<CCTargetItem *> *)selectable {
+    NSMutableArray<CCTargetItem *> *list = [NSMutableArray array];
+    for (CCTargetItem *t in _targets)
+        if (t.isPresent && t.enabled && t.lastResult && t.bytes > 0 && !t.hasLeftovers) [list addObject:t];
+    return list;
+}
+
+- (long long)cleanableBytes {
+    long long sum = 0;
+    for (CCTargetItem *t in [self selectable]) sum += t.bytes;
+    return sum;
+}
+
+- (BOOL)onlyTrashLeft {
+    NSArray<CCTargetItem *> *list = [self selectable];
+    if (list.count == 0) return NO;
+    for (CCTargetItem *t in list)
+        if (!t.isTrash) return NO;
+    return YES;
+}
+
+- (BOOL)showsTrashLine { return self.trashBytes > 0 && !(self.onlyTrashLeft && !self.scanning); }
+
+- (NSString *)trashLine {
+    for (CCTargetItem *t in _targets)
+        if (t.isTrash && t.enabled) return [NSString stringWithFormat:@"%@: %@", t.name, CCFormatBytes(self.trashBytes)];
+    return LF(@"dash.binLine", CCFormatBytes(self.trashBytes));
+}
+
+- (NSString *)ringCaption {
+    if (self.scanning || self.diskTotal <= 0 || self.displayBytes <= 0) return L(@"dash.reclaimable");
+    double percent = 100.0 * self.displayBytes / self.diskTotal;
+    NSString *share = percent < 0.1 ? @"<0.1%" : percent < 10 ? [CCFormatDecimal(percent) stringByAppendingString:@"%"] : [NSString stringWithFormat:@"%.0f%%", percent];
+    NSString *caption = LF(@"dash.ofDisk", share, CCFormatBytes(self.diskTotal));
+    return self.onlyTrashLeft ? [NSString stringWithFormat:@"%@ · %@", caption, L(@"dash.inBin")] : caption;
+}
+
+- (BOOL)canClean { return self.hasResults && !self.scanning && !self.cleaning && [self selectable].count > 0; }
 
 // ───────────── scanning ─────────────
 
@@ -340,6 +385,7 @@ static BOOL HasFullDiskAccess(void) {
     if (!self.scanning) return;
     if (event.phase != CCScanPhaseStarted) _liveBytes[event.targetId] = @(event.targetBytes);
     self.displayBytes = [self selectedLiveBytes];
+    [self updateRingAngle];
     _scanCompleted = MAX(_scanCompleted, event.completed);
     self.statusText = _status();
     CCTargetItem *item = [self itemWithId:event.targetId];
@@ -376,23 +422,22 @@ static BOOL HasFullDiskAccess(void) {
 
 - (void)clean {
     if (self.scanning || self.cleaning) return;
-    NSMutableArray<CCTargetItem *> *selected = [NSMutableArray array];
-    long long bytes = 0, files = 0;
-    for (CCTargetItem *t in _targets) {
-        if (t.enabled && t.lastResult && t.bytes > 0) {
-            [selected addObject:t];
-            bytes += t.bytes;
-            files += t.fileCount;
-        }
-    }
+    NSArray<CCTargetItem *> *selected = [self selectable];
     if (selected.count == 0) return;
-    BOOL trash = self.settings.useTrash;
-    NSString *title = LF(@"clean.confirmTitle", CCFormatBytes(bytes));
-    NSString *body = LF(trash ? @"clean.confirmRecycle" : @"clean.confirmPermanent", CCFormatCount(files), @(selected.count));
+    long long bytes = 0, files = 0;
+    for (CCTargetItem *t in selected) {
+        bytes += t.bytes;
+        files += t.fileCount;
+    }
+    // Caches and temporary files are deleted for good, like every cleaner does: apps rebuild them, and in the Trash they
+    // would free nothing. The Trash setting is for what is removed by hand.
+    BOOL emptyingTrash = self.onlyTrashLeft;
+    NSString *title = LF(emptyingTrash ? @"clean.binTitle" : @"clean.confirmTitle", CCFormatBytes(bytes));
+    NSString *body = emptyingTrash ? LF(@"clean.binBody", CCFormatCount(files)) : LF(@"clean.confirmPermanent", CCFormatCount(files), @(selected.count));
     void (^go)(BOOL) = ^(BOOL ok) {
-        if (ok) [self runClean:selected trash:trash];
+        if (ok) [self runClean:selected trash:NO];
     };
-    if (self.confirm && self.settings.confirmClean) self.confirm(title, body, L(@"clean.confirm"), !trash, go);
+    if (self.confirm && self.settings.confirmClean) self.confirm(title, body, L(emptyingTrash ? @"clean.binConfirm" : @"clean.confirm"), emptyingTrash, go);
     else go(YES);
 }
 
@@ -584,13 +629,19 @@ static BOOL HasFullDiskAccess(void) {
     });
 }
 
+/// The ring is the share of the whole disk, live while scanning; a sliver stays visible however small the share.
+- (void)updateRingAngle {
+    self.ringAngle = self.diskTotal > 0 && self.displayBytes > 0 ? MAX(4, 360.0 * self.displayBytes / self.diskTotal) : 0;
+}
+
 - (void)recalc {
-    long long found = 0, selectedBytes = 0, maxBytes = 0;
+    long long found = 0, selectedBytes = 0, maxBytes = 0, trash = 0;
     NSInteger selected = 0, present = 0;
     for (CCTargetItem *t in _targets) {
         if (!t.isPresent) continue;
         present++;
         found += t.bytes;
+        if (t.isTrash) trash += t.bytes;
         maxBytes = MAX(maxBytes, t.bytes);
         if (t.enabled) {
             selected++;
@@ -601,9 +652,10 @@ static BOOL HasFullDiskAccess(void) {
     self.selectedBytes = selectedBytes;
     self.selectedCount = selected;
     self.presentCount = present;
-    for (CCCategoryItem *c in _categories) [c recalc:found];
-    self.displayBytes = self.scanning ? [self selectedLiveBytes] : selectedBytes;
-    self.ringAngle = found > 0 ? 360.0 * selectedBytes / found : 0;
+    self.trashBytes = trash;
+    for (CCCategoryItem *c in _categories) [c recalc:found - trash];
+    self.displayBytes = self.scanning ? [self selectedLiveBytes] : self.cleanableBytes;
+    [self updateRingAngle];
     for (CCTargetItem *t in _targets) t.share = maxBytes > 0 ? (double)t.bytes / maxBytes : 0;
 
     NSArray *present6 = [[_targets filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"isPresent == YES AND bytes > 0"]]
@@ -643,6 +695,16 @@ static BOOL HasFullDiskAccess(void) {
 
 - (void)openFullDiskAccessSettings {
     [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"]];
+}
+
+- (void)askForFullDiskAccessDeclined:(void (^)(void))declined {
+    [self refreshAccess];
+    if (self.hasFullDiskAccess || !self.confirm) return;
+    self.confirmSymbol = @"lock.shield";
+    self.confirm(L(@"access.ask.title"), L(@"access.ask.body"), L(@"titlebar.runAsAdmin"), NO, ^(BOOL ok) {
+        if (ok) [self openFullDiskAccessSettings];
+        else if (declined) declined();
+    });
 }
 
 - (void)refreshInsights {

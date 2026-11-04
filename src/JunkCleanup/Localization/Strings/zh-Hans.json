@@ -232,6 +232,8 @@
   "target.dev.visualstudio.desc": "组件模型与扩展缓存。",
   "target.dev.playwright.name": "Playwright 浏览器",
   "target.dev.playwright.desc": "Playwright 下载的浏览器二进制文件。",
+  "target.dev.projects.name": "旧项目的构建文件夹",
+  "target.dev.projects.desc": "30 天未改动的项目中的 node_modules、target、.venv、build 等。npm install、cargo build 或 pip 会重新生成。",
   "target.dev.huggingface.name": "Hugging Face Hub",
   "target.dev.huggingface.desc": "已下载的模型和数据集。可能非常大。",
   "target.dev.android.name": "Android 构建缓存",

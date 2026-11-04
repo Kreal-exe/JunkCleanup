@@ -100,13 +100,15 @@ static CCModel *M(void) { return CCModel.shared; }
 
 @interface CCNavItem : NSView <CCLive>
 @property (nonatomic) BOOL selected;
+/// A figure at the trailing edge (what the page holds), like Finder's sidebar counts; nil hides it.
+@property (nonatomic, copy) NSString *detail;
 @property (nonatomic, copy) void (^onClick)(void);
 @end
 
 @implementation CCNavItem {
     CCBox *_box;
     CCIcon *_icon;
-    CCLabel *_label;
+    CCLabel *_label, *_detail;
     NSTrackingArea *_tracking;
     BOOL _hovered;
 }
@@ -120,12 +122,18 @@ static CCModel *M(void) { return CCModel.shared; }
         _icon = [CCIcon symbol:symbol size:17 weight:NSFontWeightRegular role:CCRoleMuted];
         _label = [CCLabel key:key size:14 weight:NSFontWeightMedium role:CCRoleMuted];
         NSStackView *row = CCHStack(@[ _icon, _label ], 14);
+        _detail = [CCLabel text:@"" size:12 weight:NSFontWeightMedium role:CCRoleFaint];
+        _detail.hidden = YES;
         [self addSubview:_box];
         [self addSubview:row];
+        [self addSubview:_detail];
         CCPin(_box, self, NSEdgeInsetsMake(0, 0, 0, 0));
         [NSLayoutConstraint activateConstraints:@[
             [row.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:14],
             [row.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+            [_detail.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-14],
+            [_detail.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+            [_detail.leadingAnchor constraintGreaterThanOrEqualToAnchor:row.trailingAnchor constant:8],
             [_icon.widthAnchor constraintEqualToConstant:22],
         ]];
         self.accessibilityElement = YES;
@@ -135,6 +143,14 @@ static CCModel *M(void) { return CCModel.shared; }
     }
     return self;
 }
+
+- (void)setDetail:(NSString *)detail {
+    _detail.stringValue = detail ?: @"";
+    _detail.hidden = detail.length == 0;
+    self.accessibilityValueDescription = detail;
+}
+
+- (NSString *)detail { return _detail.hidden ? nil : _detail.stringValue; }
 
 - (void)setSelected:(BOOL)selected {
     _selected = selected;
@@ -397,13 +413,16 @@ static CCModel *M(void) { return CCModel.shared; }
     _diskBar.fillGradient = ^NSArray<NSColor *> *{ return CCTheme.accentGradient; };
     CCSize(_diskBar, 0, 6);
     _diskText = [CCLabel text:@"" size:11.5 weight:NSFontWeightRegular role:CCRoleFaint];
+    // Wraps rather than lose the figure: a long translation takes two lines.
     _lifetime = [CCLabel text:@"" size:11.5 weight:NSFontWeightRegular role:CCRoleSuccess];
+    _lifetime.wraps = YES;
     NSStackView *disk = CCVStack(@[ diskTop, _diskBar, _diskText, _diskFree, _lifetime ], 0);
     [disk setCustomSpacing:2 afterView:_diskText];
     [disk setCustomSpacing:12 afterView:diskTop];
     [disk setCustomSpacing:8 afterView:_diskBar];
     [disk setCustomSpacing:4 afterView:_diskText];
-    for (NSView *v in @[ diskTop, _diskBar ]) [v.widthAnchor constraintEqualToAnchor:disk.widthAnchor].active = YES;
+    [disk setCustomSpacing:4 afterView:_diskFree];
+    for (NSView *v in @[ diskTop, _diskBar, _lifetime ]) [v.widthAnchor constraintEqualToAnchor:disk.widthAnchor].active = YES;
     CCCard *diskCard = [CCCard card];
     diskCard.radius = 16;
     [diskCard addSubview:disk];
@@ -491,6 +510,10 @@ static CCModel *M(void) { return CCModel.shared; }
     _accessPill.hidden = !m.hasFullDiskAccess;
     _accessPill.label.stringValue = L(@"titlebar.admin");
     _themeButton.toolTip = L(@"titlebar.theme");
+    // What each page holds, at the edge of its sidebar item: found caches, and what the disk map can remove safely.
+    _navItems[CCPageTargets].detail = m.hasResults && m.foundBytes > 0 ? CCFormatBytes(m.foundBytes) : nil;
+    long long safe = CCDiskModel.shared.report ? [CCDiskModel.shared safeBytes] : 0;
+    _navItems[CCPageDisk].detail = safe > 0 ? CCFormatBytes(safe) : nil;
     for (CCPageView *page in _pages)
         if (!page.hidden) [page refresh];
     if (m.overlayVisible) [_cleanOverlay refresh];
@@ -612,6 +635,56 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-retain-cycles"
 // The step block keeps itself alive until the app quits at the end of the run.
+- (void)runTour {
+    void (^after)(double, dispatch_block_t) = ^(double seconds, dispatch_block_t block) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), block);
+    };
+    void (^mark)(const char *) = ^(const char *name) {
+        printf("tour %s %.3f\n", name, NSDate.date.timeIntervalSince1970);
+        fflush(stdout);
+    };
+    __block void (^whenIdle)(dispatch_block_t);
+    whenIdle = ^(dispatch_block_t block) {
+        if (M().scanning || CCDiskModel.shared.analyzing) after(0.05, ^{ whenIdle(block); });
+        else block();
+    };
+    CCDiskModel *disk = CCDiskModel.shared;
+    after(4.0, ^{
+        mark("start");
+        after(1.5, ^{
+            mark("scan");
+            [M() startScan];
+            after(0.3, ^{ whenIdle(^{
+                mark("scanned");
+                after(1.6, ^{
+                    mark("disk");
+                    M().page = CCPageDisk;
+                    after(2.6, ^{
+                        mark("band");
+                        [disk pickSegment:CCSpaceSystem];
+                        after(3.0, ^{
+                            mark("clear");
+                            [disk clearFilter];
+                            after(2.2, ^{
+                                mark("pick");
+                                for (CCVolume *v in disk.volumes)
+                                    if (!v.isHome) { [disk selectVolume:v]; break; }
+                                after(0.3, ^{ whenIdle(^{
+                                    mark("mapped");
+                                    after(2.6, ^{
+                                        mark("end");
+                                        [NSApp terminate:nil];
+                                    });
+                                }); });
+                            });
+                        });
+                    });
+                });
+            }); });
+        });
+    });
+}
+
 - (void)captureInto:(NSString *)folder {
     [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
     __weak CCWindowController *weak = self;
@@ -625,7 +698,7 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
     NSUInteger pageArg = [args indexOfObject:@"--page"];
     BOOL diskOnly = pageArg != NSNotFound && pageArg + 1 < args.count && [[args[pageArg + 1] lowercaseString] isEqualToString:@"disk"];
     // It also resizes the window wide and to its minimum, and checks every page lets it grow and shrink (stdout).
-    if (diskOnly) shots = @[ @"disk", @"disk-parts", @"disk-wide", @"disk-narrow", @"disk-narrow-top", @"resize-check" ];
+    if (diskOnly) shots = @[ @"disk", @"disk-filter", @"disk-parts", @"disk-wide", @"disk-narrow", @"disk-narrow-top", @"resize-check" ];
     void (^resize)(CGFloat) = ^(CGFloat width) {
         CCWindowController *s = weak;
         NSRect visible = s.window.screen.visibleFrame;
@@ -667,7 +740,11 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
         if ([shot isEqualToString:@"dashboard"]) M().page = CCPageDashboard;
         else if ([shot isEqualToString:@"targets"]) M().page = CCPageTargets;
         else if ([shot isEqualToString:@"disk"]) M().page = CCPageDisk;
-        else if ([shot isEqualToString:@"disk-parts"]) [(CCDiskPage *)s->_pages[CCPageDisk] revealPartsForCapture];
+        else if ([shot isEqualToString:@"disk-filter"]) [CCDiskModel.shared pickSegment:CCSpaceSystem];
+        else if ([shot isEqualToString:@"disk-parts"]) {
+            [CCDiskModel.shared clearFilter];
+            [(CCDiskPage *)s->_pages[CCPageDisk] revealPartsForCapture];
+        }
         else if ([shot isEqualToString:@"disk-wide"]) resize(MIN(1600, NSWidth(s.window.screen.visibleFrame) - 16));
         else if ([shot isEqualToString:@"disk-narrow"]) resize(980);
         else if ([shot isEqualToString:@"disk-narrow-top"]) {

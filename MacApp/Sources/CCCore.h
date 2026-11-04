@@ -62,6 +62,10 @@ NSString *CCFormatDecimal(double value);
 @property (nonatomic) BOOL fallback;
 /// The roots are versions of one thing (an app's bundled runtimes): the newest one is in use and left alone.
 @property (nonatomic) BOOL keepsNewest;
+/// Finds the roots itself instead of expanding rootPatterns (old projects' build folders).
+@property (nonatomic, copy, nullable) NSArray<NSString *> * (^finder)(void);
+/// A root is itself the junk (a project's node_modules): once emptied it is removed too.
+@property (nonatomic) BOOL removesRoots;
 /// Display name override (custom folders); nil means the localized key.
 @property (nonatomic, copy, nullable) NSString *displayName;
 

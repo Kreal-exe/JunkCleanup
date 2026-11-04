@@ -28,7 +28,7 @@ public class TargetCatalogTests
     {
         foreach (var t in TargetCatalog.All.Where(t => t.Kind == TargetKind.Files))
         {
-            Assert.NotEmpty(t.RootPatterns);
+            Assert.True(t.RootPatterns.Length > 0 || t.Finder is not null, t.Id);
             Assert.NotEmpty(t.FilePatterns);
             Assert.All(t.RootPatterns, p => Assert.False(string.IsNullOrWhiteSpace(p)));
         }

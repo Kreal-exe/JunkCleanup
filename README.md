@@ -37,7 +37,8 @@ the Windows app's scan and clean engine and looks the same.
 
 ## Highlights
 
-- **65 built-in targets** across System, Browsers, Developer tools, Apps and Gaming — from `%TEMP%` and thumbnail caches to pip / npm / NuGet / Cargo, Chrome / Edge / Firefox, Discord / Telegram / Spotify, NVIDIA / AMD shader caches, Steam / Epic / GOG launchers, iTunes firmware leftovers, Microsoft Store app caches, old Claude Code builds, Codex caches, every other Electron app and `~/.cache` — and more.
+- **67 built-in targets** across System, Browsers, Developer tools, Apps and Gaming — from `%TEMP%` and thumbnail caches to pip / npm / NuGet / Cargo, Chrome / Edge / Firefox, Discord / Telegram / Spotify, NVIDIA / AMD shader caches, Steam / Epic / GOG launchers, iTunes firmware leftovers, Microsoft Store app caches, old Claude Code builds, Codex caches, every other Electron app and `~/.cache` — and more.
+- **Old projects' build folders.** `node_modules`, Rust and Maven `target`, Python virtual environments, Gradle `build`, .NET `bin` / `obj`, `.next`, `.dart_tool`… in your projects folders (`Code`, `Projects`, `Developer`, `source/repos`, `Documents/Code`…), only where the project's own file says which tool made them, and only in projects with nothing changed for 30 days: what you are working on is left alone. Off by default; `npm install`, `cargo build` or `pip` brings them back.
 - **Fast, parallel scanning.** The scan starts as soon as the app opens (a switch in Settings); 130 000+ files are measured in well under a second, and the dashboard counts up live while it runs.
 - **Risk-aware.** Every target is tagged *Safe*, *Moderate* or *Careful*, with a one-line explanation of what deleting it costs you. *Safe only* selects the no-brainers.
 - **Safe by design.** Caches and temp files are deleted for good (apps rebuild them); what you remove by hand goes to the Recycle Bin. Only files underneath scanned locations are ever touched; drive roots, Windows, Program Files and your personal folders are hard-blocked. Recent temp files can be skipped automatically.
@@ -67,6 +68,10 @@ the Windows app's scan and clean engine and looks the same.
 ## macOS
 
 <p align="center">
+  <img src="docs/mac-demo.webp" width="900" alt="JunkCleanup on macOS: a scan, the disk map, a band opened, an external drive picked">
+</p>
+
+<p align="center">
   <img src="docs/mac-dashboard.png" width="900" alt="JunkCleanup on macOS">
 </p>
 
@@ -90,13 +95,13 @@ Native Objective-C and AppKit, drawn with Core Animation: the same palette, card
 staggered entrances, drifting background and confetti as the WPF app, with the same easing curves and timings. The
 window is translucent (vibrancy), follows the system theme if asked, and uses SF Symbols and the system font.
 
-**60 macOS targets** across the same five categories:
+**62 macOS targets** across the same five categories:
 
 | Category | Targets |
 |---|---|
 | System | App caches (`~/Library/Caches`, Apple's own left alone), temporary files (`$TMPDIR`), logs, crash reports, Quick Look thumbnails, saved app state (off), iPhone & iPad backups (careful, off), Trash (off) |
 | Browsers | Safari, Chrome, Edge, Brave, Arc, Vivaldi, Yandex, Opera / Opera GX, Firefox |
-| Developer | ~/.cache tool caches, Ollama and LM Studio models (careful, off), Xcode DerivedData, device support, archives (off), Simulator caches, Homebrew, CocoaPods, SwiftPM, pip, uv, npm, Yarn, pnpm, Bun, NuGet, Gradle, Maven (off), Cargo, Go, Conda, Android, VS Code, JetBrains, Playwright (off), Hugging Face (careful, off) |
+| Developer | ~/.cache tool caches, Ollama and LM Studio models (careful, off), Xcode DerivedData, device support, archives (off), Simulator caches, Homebrew, CocoaPods, SwiftPM, pip, uv, npm, Yarn, pnpm, Bun, NuGet, Gradle, Maven (off), Cargo, Go, Conda, Android, VS Code, JetBrains, Playwright (off), Hugging Face (careful, off), old projects' build folders (off) |
 | Apps | Discord, Slack, Teams, Telegram Desktop, Spotify, iOS firmware downloads, Adobe media cache, old Claude Code builds (the newest is kept), Codex cache, Codex runtime (off), every other Electron app (Claude, Notion, Figma…) |
 | Gaming | Metal shader cache, Steam, Epic Games Launcher, Battle.net |
 
@@ -104,8 +109,21 @@ Where Windows asks for administrator rights, macOS asks for **Full Disk Access**
 backups are readable only with it. *Grant Full Disk Access* in the title bar opens the right page of System Settings;
 targets that need it are marked. Other apps' sandbox containers are never opened, so macOS shows no privacy prompts.
 
-*Also on this disk* reports purgeable space and local Time Machine snapshots, swap files, the sleep image and old
-Simulator devices — with the command that deals with them.
+*Also on this disk* reports purgeable space and local Time Machine snapshots, swap files, the sleep image, old
+Simulator devices and Apple Intelligence's on-device models — with the command or the Settings pane that deals with
+them. The models are measured from MobileAsset's own records; macOS removes them when Apple Intelligence is turned off
+in *Apple Intelligence & Siri*, the one public way to do it.
+
+The *Disk* page maps any local disk: with an external drive mounted, a picker next to *Analyze* switches between it and
+the startup disk, and follows drives as they are plugged in and ejected. A band of the bar or a legend entry narrows the
+list to that band. An app in */Applications* has a trash icon: it lists what the app keeps in `~/Library` (caches,
+settings, data, containers), then moves the app and all of it to the Trash, like AppCleaner. Apple's apps stay, an app has
+to be quit first, and what belongs to another installed app is left alone.
+
+Cleaning deletes caches and temporary files for good, because in the Trash they would free nothing; the Trash setting
+is for what you remove by hand. The Trash has its own line on the dashboard, and when it is all that is left the button
+reads *Empty Trash*. Files a clean could not remove stop counting until the next scan, and the ring shows the share of
+the whole disk that a press of *Clean* frees.
 
 ## Linux
 
@@ -128,14 +146,14 @@ Xfce, tiling window managers) without depending on the GTK or Qt version; the wi
 bar. Icons are Material Design icons, the font is Inter, the theme follows the desktop's light or dark preference if
 asked.
 
-**44 Linux targets**, found through the XDG base directories (`$XDG_CACHE_HOME`, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`
+**47 Linux targets**, found through the XDG base directories (`$XDG_CACHE_HOME`, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`
 and their defaults) and the copies sandboxed apps keep (`~/.var/app/ID/…` for Flatpak, `~/snap/NAME/…` for Snap):
 
 | Category | Targets |
 |---|---|
 | System | Thumbnail cache (`~/.cache/thumbnails`), your crash reports in `/var/crash`, Xorg / display-manager session logs, Trash (off) |
 | Browsers | Chrome, Chromium, Edge, Brave, Vivaldi, Opera, Yandex, Firefox — native, Snap and Flatpak installs |
-| Developer | pip, uv, npm, Yarn, pnpm, Bun, NuGet, NuGet packages (off), Gradle, Maven (off), Cargo, Go, Conda, Android, VS Code / VSCodium / Cursor / Windsurf, JetBrains, Playwright (off), Hugging Face, Ollama and LM Studio models (careful, off), `~/.cache` tool caches |
+| Developer | pip, uv, npm, Yarn, pnpm, Bun, NuGet, NuGet packages (off), Gradle, Maven (off), Cargo, Go, Conda, Android, VS Code / VSCodium / Cursor / Windsurf, JetBrains, Playwright (off), Hugging Face, Ollama and LM Studio models (careful, off), old projects' build folders (off), `~/.cache` tool caches |
 | Apps | Discord, Slack, Telegram Desktop, Spotify (native, Snap, Flatpak), Codex, every Flatpak app's cache, every Snap's cache, every other Electron app |
 | Gaming | Steam (native, `~/.steam`, Flatpak, Snap), Mesa and NVIDIA GPU shader caches |
 
@@ -242,7 +260,8 @@ The same rules hold on all three systems (on Linux: `/`, `/usr`, `/etc`, `/var`,
 base folders themselves, Documents, Downloads and the other user dirs — localized names included — `~/.ssh`,
 `~/.mozilla`, `~/.var/app`, `~/snap` and any folder that holds one of them are protected, symlinks are judged by where
 they point, and files go to the Trash; on macOS: the system folders, `/Applications`, your home folder, Documents,
-Desktop, Downloads, `~/Library`, iCloud Drive and app containers are the protected set, and files go to the Trash).
+Desktop, Downloads, `~/Library`, iCloud Drive and app containers are the protected set; caches are deleted for good, and
+what you remove by hand goes to the Trash).
 
 1. **Scanned roots only.** The cleaner receives the exact file list the scanner produced and refuses anything that is not strictly underneath one of the resolved roots ([`PathGuard`](src/JunkCleanup/Core/PathGuard.cs)).
 2. **Protected locations.** Drive roots, `Windows`, `System32`, `Program Files`, `ProgramData`, `AppData`, your profile, Documents, Pictures, Downloads, Desktop and OneDrive can never become a root — not even as a custom folder.

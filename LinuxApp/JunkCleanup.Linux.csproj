@@ -35,6 +35,7 @@
     <Compile Include="..\src\JunkCleanup\Core\ScanEngine.cs" Link="Core\Shared\ScanEngine.cs" />
     <Compile Include="..\src\JunkCleanup\Core\CleanEngine.cs" Link="Core\Shared\CleanEngine.cs" />
     <Compile Include="..\src\JunkCleanup\Core\DiskMap.cs" Link="Core\Shared\DiskMap.cs" />
+    <Compile Include="..\src\JunkCleanup\Core\ProjectArtifacts.cs" Link="Core\Shared\ProjectArtifacts.cs" />
   </ItemGroup>
 
   <!-- the Windows app's translations, then the Linux wording laid over them -->
