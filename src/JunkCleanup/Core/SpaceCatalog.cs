@@ -52,6 +52,13 @@ public static class SpaceCatalog
         new() { Id = "windows", Segment = SpaceSegment.System, Glyph = GWindows, Paths = [@"%WINDIR%"], Command = "Dism.exe /Online /Cleanup-Image /StartComponentCleanup" },
     ];
 
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern bool GetDiskFreeSpaceW(string root, out uint sectorsPerCluster, out uint bytesPerSector, out uint freeClusters, out uint totalClusters);
+
+    /// <summary>The drive's allocation unit (4 KB on most NTFS drives, often 128 KB on large exFAT ones); 0 if unknown.</summary>
+    public static long ClusterSize(string root)
+        => GetDiskFreeSpaceW(root, out var sectors, out var bytes, out _, out _) ? (long)sectors * bytes : 0;
+
     /// <summary>The drive holding the user's profile: the one mapped with the profile, AppData and the known items.</summary>
     public static string HomeDrive => Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) is { Length: > 0 } root
         ? root
@@ -83,6 +90,7 @@ public static class SpaceCatalog
             KeepNames = keep,
             VolumePath = root,
             Includes = OnDrive,
+            ClusterSize = ClusterSize(root),
             Glyphs = (GFolder, GPersonal, GErase),
         };
     }
@@ -91,6 +99,7 @@ public static class SpaceCatalog
     private static SpaceScope HomeScope(string root, Func<string, bool> onDrive, (string, SpaceSegment)[] filed, string[] keep) => new()
     {
         Includes = onDrive,
+        ClusterSize = ClusterSize(root),
         Rules = Rules,
         Roots = [(@"%USERPROFILE%", SpaceSegment.Files),(@"%LOCALAPPDATA%", SpaceSegment.Apps), (@"%APPDATA%", SpaceSegment.Apps), (root, SpaceSegment.Files)],
         Containers = [],

@@ -113,6 +113,13 @@ public sealed class SpaceScope
     /// </summary>
     public Func<string, bool>? Includes { get; init; }
 
+    /// <summary>
+    /// The volume's allocation unit: each file is counted as the whole clusters it takes, like "Size on disk" in
+    /// Explorer (on exFAT with 128 KB clusters, half a million small files take tens of gigabytes more than their
+    /// content). 0 counts the content only.
+    /// </summary>
+    public long ClusterSize { get; init; }
+
     /// <summary>Icons in the platform's icon set: a discovered folder, a personal folder, the cleanable caches.</summary>
     public required (string Folder, string Personal, string Caches) Glyphs { get; init; }
 }
@@ -124,12 +131,15 @@ public sealed class SpaceScope
 /// </summary>
 public sealed class DiskMapEngine
 {
+    private long _cluster;
+
     /// <summary>Discovered folders smaller than this are folded into one "other" entry.</summary>
     public const long SmallFolder = 64L * 1024 * 1024;
 
     public async Task<SpaceReport> AnalyzeAsync(SpaceScope scope, IReadOnlyList<CleanupTarget> targets, IProgress<string>? progress, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
+        _cluster = scope.ClusterSize;
         var (volumeName, total, free) = Volume(scope.VolumePath);
         var report = new SpaceReport { VolumeName = volumeName, Total = total, Free = free };
 
@@ -230,7 +240,7 @@ public sealed class DiskMapEngine
             var unreadable = false;
             foreach (var p in entry.Paths)
             {
-                var (b, u) = Measure(p, exclude, token);
+                var (b, u) = Measure(p, exclude, token, scope.ClusterSize);
                 bytes += b;
                 unreadable |= u;
             }
@@ -297,7 +307,7 @@ public sealed class DiskMapEngine
 
         if (Directory.Exists(path) || File.Exists(path))
         {
-            var (left, _) = Measure(path, new HashSet<string>(PathGuard.Comparer), CancellationToken.None);
+            var (left, _) = Measure(path, new HashSet<string>(PathGuard.Comparer), CancellationToken.None, _cluster);
             return Math.Max(0, entry.Bytes - left);
         }
         return entry.Bytes;
@@ -332,11 +342,12 @@ public sealed class DiskMapEngine
     }
 
     /// <summary>Bytes under a path (a folder or one file), never following links, skipping excluded folders.</summary>
-    internal static (long Bytes, bool Unreadable) Measure(string path, IReadOnlySet<string> exclude, CancellationToken ct)
+    internal static (long Bytes, bool Unreadable) Measure(string path, IReadOnlySet<string> exclude, CancellationToken ct, long cluster = 0)
     {
+        long OnDisk(long length) => cluster > 0 ? (length + cluster - 1) / cluster * cluster : length;
         try
         {
-            if (File.Exists(path)) return (new FileInfo(path).Length, false);
+            if (File.Exists(path)) return (OnDisk(new FileInfo(path).Length), false);
         }
         catch
         {
@@ -361,7 +372,7 @@ public sealed class DiskMapEngine
                     (ref System.IO.Enumeration.FileSystemEntry e) => e.IsDirectory ? (e.ToFullPath(), 0) : (null, e.Length), MeasureOptions);
                 foreach (var (folder, length) in entries)
                 {
-                    if (folder is null) local += length;
+                    if (folder is null) local += OnDisk(length);
                     else if (!exclude.Contains(folder)) folders.Add(folder);
                 }
             }

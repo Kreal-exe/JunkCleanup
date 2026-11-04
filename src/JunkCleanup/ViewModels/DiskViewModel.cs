@@ -12,19 +12,31 @@ namespace JunkCleanup.ViewModels;
 /// <summary>A band of the disk bar (or a legend entry): a share of the whole disk.</summary>
 public sealed partial class SegmentVm : ObservableObject
 {
-    public SegmentVm(string key, Brush brush)
+    public SegmentVm(SpaceSegment segment, Brush brush)
     {
-        Key = key;
+        Segment = segment;
+        Key = "disk.seg." + segment;
         Brush = brush;
+        DimBrush = brush.Clone();
+        DimBrush.Opacity = 0.22;
+        DimBrush.Freeze();
         LocalizationManager.Instance.LanguageChanged += (_, _) => OnPropertyChanged(nameof(Name));
     }
 
+    public SpaceSegment Segment { get; }
     public string Key { get; }
     public string Name => LocalizationManager.Instance[Key];
     public Brush Brush { get; }
+    private Brush DimBrush { get; }
     [ObservableProperty] private long _bytes;
     public bool HasBytes => Bytes > 0;
     partial void OnBytesChanged(long value) => OnPropertyChanged(nameof(HasBytes));
+
+    /// <summary>Another band is picked: this one fades, in the bar and in the legend.</summary>
+    [ObservableProperty] private bool _isDimmed;
+    [ObservableProperty] private bool _isPicked;
+    public Brush DisplayBrush => IsDimmed ? DimBrush : Brush;
+    partial void OnIsDimmedChanged(bool value) => OnPropertyChanged(nameof(DisplayBrush));
 }
 
 public static class SpaceColors
@@ -120,7 +132,9 @@ public sealed partial class SpaceItemVm : ObservableObject
     public long SafeBytes => SafeParts.Sum(p => p.Bytes);
     public bool HasSafe => Children.Count > 0 && SafeBytes > 0;
     public string SafeText => Loc.Format("disk.safe", ByteFormatter.Format(SafeBytes));
-    public bool HasCommand => Entry.Command is not null;
+    public bool HasCommand => Entry.Command is not null && !IsRepairable;
+    /// <summary>Lost clusters: one button runs the repair instead of a command to copy.</summary>
+    public bool IsRepairable => Entry.Id == "lost";
     public bool IsCleanable => Entry.Id == "caches" || Entry.TargetId is not null;
     public bool CanReveal => Entry.Paths.Count > 0 && (Directory.Exists(Entry.Path) || File.Exists(Entry.Path));
 
@@ -218,7 +232,9 @@ public sealed partial class DiskViewModel : ObservableObject
         _targets = targets;
         _dialogs = dialogs;
         foreach (var segment in Enum.GetValues<SpaceSegment>())
-            Segments.Add(new SegmentVm("disk.seg." + segment, SpaceColors.Brush(segment)));
+            Segments.Add(new SegmentVm(segment, SpaceColors.Brush(segment)));
+        ItemsView = System.Windows.Data.CollectionViewSource.GetDefaultView(Items);
+        ItemsView.Filter = o => _filter is not { } f || ((SpaceItemVm)o).Entry.Segment == f;
         _status = () => Loc["disk.notAnalyzed"];
         _statusText = _status();
         Loc.LanguageChanged += (_, _) =>
@@ -269,6 +285,7 @@ public sealed partial class DiskViewModel : ObservableObject
         Items.Clear();
         Total = Free = 0;
         foreach (var vm in Segments) vm.Bytes = 0;
+        FilterBy(null);
         OnPropertyChanged(nameof(SubtitleText));
         if (IsAnalyzing)
         {
@@ -289,6 +306,35 @@ public sealed partial class DiskViewModel : ObservableObject
 
     public ObservableCollection<SegmentVm> Segments { get; } = [];
     public ObservableCollection<SpaceItemVm> Items { get; } = [];
+
+    /// <summary>The list under the bar: every item, or only those of the band picked in the bar or the legend.</summary>
+    public System.ComponentModel.ICollectionView ItemsView { get; }
+    private SpaceSegment? _filter;
+    public bool IsFiltered => _filter is not null;
+    public string FilterText => _filter is { } f ? Loc.Format("disk.filter", Loc["disk.seg." + f]) : string.Empty;
+    /// <summary>The picked band lists nothing: space in use that no folder accounts for.</summary>
+    public bool IsFilterEmpty => _filter is not null && ItemsView.IsEmpty;
+
+    /// <summary>A band of the bar or the legend: show only its items; the same band again shows all.</summary>
+    [RelayCommand]
+    private void PickSegment(SegmentVm? segment) => FilterBy(segment is null || segment.Segment == _filter ? null : segment.Segment);
+
+    [RelayCommand]
+    private void ClearFilter() => FilterBy(null);
+
+    private void FilterBy(SpaceSegment? segment)
+    {
+        _filter = segment;
+        foreach (var vm in Segments)
+        {
+            vm.IsPicked = vm.Segment == segment;
+            vm.IsDimmed = segment is not null && vm.Segment != segment;
+        }
+        ItemsView.Refresh();
+        OnPropertyChanged(nameof(IsFiltered));
+        OnPropertyChanged(nameof(FilterText));
+        OnPropertyChanged(nameof(IsFilterEmpty));
+    }
 
     [ObservableProperty] private bool _isAnalyzing;
     [ObservableProperty] private bool _hasReport;
@@ -381,7 +427,9 @@ public sealed partial class DiskViewModel : ObservableObject
         Free = report.Free;
         Items.Clear();
         foreach (var entry in report.Items) Items.Add(new SpaceItemVm(entry, report.Used, 0));
+        if (LostSpace(report) is { } lost) Items.Insert(Items.TakeWhile(i => i.Bytes >= lost.Bytes).Count(), new SpaceItemVm(lost, report.Used, 0));
         UpdateSegments();
+        FilterBy(_filter);
         HasReport = true;
         RefreshSafe();
         OnPropertyChanged(nameof(SubtitleText));
@@ -390,11 +438,53 @@ public sealed partial class DiskViewModel : ObservableObject
     private void UpdateSegments()
     {
         if (_report is null) return;
-        foreach (var vm in Segments)
+        foreach (var vm in Segments) vm.Bytes = _report.Segments.GetValueOrDefault(vm.Segment);
+    }
+
+    /// <summary>
+    /// On exFAT and FAT there is no journal, shadow copy or index to hold space: what is in use beyond every file
+    /// (counted by whole clusters) is lost clusters, left by an interrupted copy or a drive pulled out unsafely. Only
+    /// chkdsk gives them back. Null when there is none to speak of or the drive keeps space of its own (NTFS).
+    /// </summary>
+    private SpaceEntry? LostSpace(SpaceReport report)
+    {
+        var root = SelectedDrive?.Root ?? SpaceCatalog.HomeDrive;
+        string format;
+        try { format = new DriveInfo(root).DriveFormat; } catch { return null; }
+        if (!format.Contains("FAT", StringComparison.OrdinalIgnoreCase)) return null;
+        var lost = report.Used - report.Measured;
+        if (lost < 1L << 30) return null;
+        var letter = root.TrimEnd('\\');
+        return new SpaceEntry
         {
-            var segment = Enum.Parse<SpaceSegment>(vm.Key["disk.seg.".Length..]);
-            vm.Bytes = _report.Segments.GetValueOrDefault(segment);
+            Id = "lost", Segment = SpaceSegment.System, Risk = SpaceRisk.Moderate, Glyph = "\uE90F", Key = "space.lost",
+            Bytes = lost, Command = $"chkdsk {letter} /f /x",
+        };
+    }
+
+    /// <summary>Lost space: chkdsk /f as administrator in a console window, then the drive is measured again.</summary>
+    [RelayCommand]
+    private async Task Repair(SpaceItemVm item)
+    {
+        if (item.Entry.Command is not { } command) return;
+        var ok = await _dialogs.ConfirmAsync(
+            Loc.Format("disk.repair.title", ByteFormatter.Format(item.Bytes)),
+            Loc.Format("disk.repair.body", command.Split(' ')[1]),
+            Loc["disk.repair"],
+            danger: false);
+        if (!ok) return;
+        item.IsBusy = true;
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("cmd.exe", "/c " + command + " & pause") { UseShellExecute = true, Verb = "runas" });
+            if (p is not null) await p.WaitForExitAsync();
         }
+        catch
+        {
+            // the UAC prompt was declined
+        }
+        item.IsBusy = false;
+        await Analyze();
     }
 
     [RelayCommand]

@@ -66,6 +66,14 @@
                             </StackPanel>
                         </Button>
                         <Button Style="{StaticResource GhostButton}" Padding="10,6" FontSize="12" Margin="0,0,4,0" ToolTip="{Binding Entry.Command}"
+                                Visibility="{Binding IsRepairable, Converter={StaticResource BoolToVis}}"
+                                Command="{Binding DataContext.RepairCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE90F;" Style="{StaticResource Glyph}" FontSize="12" />
+                                <TextBlock Text="{loc:Str disk.repair}" Margin="6,0,0,0" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource GhostButton}" Padding="10,6" FontSize="12" Margin="0,0,4,0" ToolTip="{Binding Entry.Command}"
                                 Visibility="{Binding HasCommand, Converter={StaticResource BoolToVis}}"
                                 Command="{Binding DataContext.CopyCommandCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}">
                             <StackPanel Orientation="Horizontal">
@@ -177,7 +185,8 @@
                         <TextBlock Text="{Binding FreeText}" Style="{StaticResource Muted}" HorizontalAlignment="Right" VerticalAlignment="Center"
                                    Visibility="{Binding HasReport, Converter={StaticResource BoolToVis}}" />
                     </Grid>
-                    <c:SegmentBar ItemsSource="{Binding Segments}" Total="{Binding Total}" Track="{DynamicResource Brush.Track}" Height="26" Gap="3" Margin="0,18,0,18" />
+                    <c:SegmentBar ItemsSource="{Binding Segments}" BrushPath="DisplayBrush" Command="{Binding PickSegmentCommand}" Total="{Binding Total}"
+                                  Track="{DynamicResource Brush.Track}" Height="26" Gap="3" Margin="0,18,0,18" ToolTip="{loc:Str disk.pickBand}" />
                     <ItemsControl ItemsSource="{Binding Segments}" Visibility="{Binding HasReport, Converter={StaticResource BoolToVis}}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -186,11 +195,39 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type vm:SegmentVm}">
-                                <StackPanel Orientation="Horizontal" Margin="0,0,22,8" Visibility="{Binding HasBytes, Converter={StaticResource BoolToVis}}">
-                                    <Border Width="10" Height="10" CornerRadius="3" Background="{Binding Brush}" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding Name}" Style="{StaticResource Muted}" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center" />
-                                    <TextBlock c:Counter.Bytes="{Binding Bytes}" FontSize="13" FontWeight="SemiBold" Margin="7,0,0,0" VerticalAlignment="Center" />
-                                </StackPanel>
+                                <!-- a legend entry picks its band, like the bar does -->
+                                <Button Margin="0,0,10,6" Padding="8,4" Cursor="Hand" Focusable="False" Visibility="{Binding HasBytes, Converter={StaticResource BoolToVis}}"
+                                        Command="{Binding DataContext.PickSegmentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="Bd" CornerRadius="9" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Hover}" />
+                                                </Trigger>
+                                                <DataTrigger Binding="{Binding IsPicked}" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
+                                                </DataTrigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                    <StackPanel Orientation="Horizontal">
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsDimmed}" Value="True">
+                                                        <Setter Property="Opacity" Value="0.45" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <Border Width="10" Height="10" CornerRadius="3" Background="{Binding Brush}" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Name}" Style="{StaticResource Muted}" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                        <TextBlock c:Counter.Bytes="{Binding Bytes}" FontSize="13" FontWeight="SemiBold" Margin="7,0,0,0" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -221,7 +258,19 @@
                 <StackPanel>
                     <TextBlock Text="{loc:Str disk.whatsTaking}" Style="{StaticResource H2}" />
                     <TextBlock Text="{loc:Str disk.whatsTaking.desc}" Style="{StaticResource Muted}" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,16" />
-                    <ItemsControl ItemsSource="{Binding Items}" ItemTemplate="{StaticResource SpaceRow}" c:Entrance.Stagger="30" />
+                    <!-- the band picked in the bar, with a way back to everything -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12" Visibility="{Binding IsFiltered, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding FilterText}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <Button Style="{StaticResource GhostButton}" Padding="10,5" FontSize="12" Margin="12,0,0,0" Command="{Binding ClearFilterCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE711;" Style="{StaticResource Glyph}" FontSize="11" />
+                                <TextBlock Text="{loc:Str disk.filter.all}" Margin="6,0,0,0" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <TextBlock Text="{loc:Str disk.filter.empty}" Style="{StaticResource Muted}" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,12"
+                               Visibility="{Binding IsFilterEmpty, Converter={StaticResource BoolToVis}}" />
+                    <ItemsControl ItemsSource="{Binding ItemsView}" ItemTemplate="{StaticResource SpaceRow}" c:Entrance.Stagger="30" />
                 </StackPanel>
             </Border>
         </StackPanel>

@@ -55,6 +55,34 @@ public sealed class SegmentBar : FrameworkElement
     public double Progress { get => (double)GetValue(ProgressProperty); set => SetValue(ProgressProperty, value); }
     public double Total { get => (double)GetValue(TotalProperty); set => SetValue(TotalProperty, value); }
 
+    /// <summary>Run with the clicked segment's item; segments are clickable only when it is set.</summary>
+    public static readonly DependencyProperty CommandProperty = DependencyProperty.Register(
+        nameof(Command), typeof(System.Windows.Input.ICommand), typeof(SegmentBar), new PropertyMetadata(null, (d, _) =>
+            ((SegmentBar)d).Cursor = ((SegmentBar)d).Command is null ? null : System.Windows.Input.Cursors.Hand));
+
+    public System.Windows.Input.ICommand? Command { get => (System.Windows.Input.ICommand?)GetValue(CommandProperty); set => SetValue(CommandProperty, value); }
+
+    // Where each segment was last drawn, for clicks.
+    private readonly List<(double From, double To, object Item)> _hits = [];
+
+    protected override void OnMouseLeftButtonUp(System.Windows.Input.MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonUp(e);
+        if (Command is null) return;
+        var x = e.GetPosition(this).X;
+        foreach (var (from, to, item) in _hits)
+        {
+            if (x < from - Gap / 2 || x > to + Gap / 2) continue;
+            if (Command.CanExecute(item)) Command.Execute(item);
+            e.Handled = true;
+            return;
+        }
+    }
+
+    // Keeps the bar hit-testable over its whole width, gaps and track included.
+    protected override HitTestResult? HitTestCore(PointHitTestParameters p)
+        => new Rect(RenderSize).Contains(p.HitPoint) ? new PointHitTestResult(this, p.HitPoint) : null;
+
     private static void OnItemsSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var bar = (SegmentBar)d;
@@ -163,6 +191,7 @@ public sealed class SegmentBar : FrameworkElement
         if (w <= 0 || h <= 0) return;
 
         var radius = h / 2;
+        _hits.Clear();
         dc.DrawRoundedRectangle(Track, null, new Rect(0, 0, w, h), radius, radius);
 
         var eased = Ease(Math.Clamp(Progress, 0, 1));
@@ -182,6 +211,7 @@ public sealed class SegmentBar : FrameworkElement
             var segWidth = widths[i] / total * available;
             if (segWidth < 1) continue;
             dc.DrawRectangle(_segments[i].Brush, null, new Rect(x, 0, segWidth, h));
+            _hits.Add((x, x + segWidth, _segments[i].Item));
             x += segWidth + Gap;
         }
         dc.Pop();
