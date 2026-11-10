@@ -4,6 +4,7 @@
 #include <fnmatch.h>
 #include <fts.h>
 #include <sys/stat.h>
+#include <sys/attr.h>
 #include <unistd.h>
 
 @implementation CCCancelToken {
@@ -50,6 +51,20 @@
 static NSString *PathFromEntry(const char *path, size_t length) {
     NSString *s = [[NSString alloc] initWithBytes:path length:length encoding:NSUTF8StringEncoding];
     return s ?: [NSFileManager.defaultManager stringWithFileSystemRepresentation:path length:length];
+}
+
+/// The bytes of a file no clone shares (APFS): what deleting it frees now. Falls back to the allocated size.
+static long long PrivateSize(const char *path, const struct stat *st) {
+    struct attrlist request = { .bitmapcount = ATTR_BIT_MAP_COUNT, .commonattr = ATTR_CMN_RETURNED_ATTRS, .forkattr = ATTR_CMNEXT_PRIVATESIZE };
+    struct {
+        uint32_t length;
+        attribute_set_t returned;
+        off_t privateSize;
+    } __attribute__((packed)) reply;
+    if (getattrlist(path, &request, &reply, sizeof reply, FSOPT_ATTR_CMN_EXTENDED | FSOPT_NOFOLLOW) == 0
+        && (reply.returned.forkattr & ATTR_CMNEXT_PRIVATESIZE))
+        return reply.privateSize;
+    return (long long)st->st_blocks * 512;
 }
 
 static BOOL MatchesAny(NSArray<NSString *> *patterns, const char *name) {
@@ -141,7 +156,7 @@ static BOOL MatchesAny(NSArray<NSString *> *patterns, const char *name) {
 
     NSMutableDictionary<NSString *, CCEntry *> *groups = [NSMutableDictionary dictionary];
     long long pending = 0;
-    long long totalBytes = 0;
+    long long totalBytes = 0, sharedBytes = 0;
     NSInteger fileCount = 0;
 
     for (NSString *root in result.roots) {
@@ -213,6 +228,11 @@ static BOOL MatchesAny(NSArray<NSString *> *patterns, const char *name) {
                     }
 
                     long long length = e->fts_statp->st_size;
+                    if (target.sharesBlocks) {
+                        long long allocated = (long long)e->fts_statp->st_blocks * 512;
+                        length = PrivateSize(e->fts_path, e->fts_statp);
+                        sharedBytes += MAX(0, allocated - length);
+                    }
                     NSString *path = PathFromEntry(e->fts_path, e->fts_pathlen);
                     [result.files addObject:path];
                     [result.sizes appendBytes:&length length:sizeof length];
@@ -248,6 +268,7 @@ static BOOL MatchesAny(NSArray<NSString *> *patterns, const char *name) {
     if (pending > 0 && onBytes) onBytes(pending);
 
     result.totalBytes = totalBytes;
+    result.sharedBytes = sharedBytes;
     result.fileCount = fileCount;
     NSArray *sorted = [[groups.allValues filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"files > 0"]]
         sortedArrayUsingDescriptors:@[ [NSSortDescriptor sortDescriptorWithKey:@"bytes" ascending:NO] ]];
@@ -471,6 +492,44 @@ static void PruneEmpty(NSString *dir, NSSet<NSString *> *keep, CCCancelToken *ca
             } else {
                 failed++;
             }
+        }
+        return finish();
+    }
+
+    if (scan.target.beforeClean && roots.count) scan.target.beforeClean(roots);
+
+    // A root that is junk as a whole goes in one piece: an app's copy is full of framework links, which a file-by-file
+    // clean never follows and so would leave behind as an empty tree.
+    if (scan.target.deletesWholeRoots) {
+        for (NSString *root in roots) {
+            if (cancel.isCancelled) break;
+            long long bytes = 0;
+            NSInteger files = 0;
+            NSString *prefix = [root stringByAppendingString:@"/"];
+            for (NSUInteger i = 0; i < scan.files.count; i++)
+                if ([scan.files[i] isEqualToString:root] || [scan.files[i] hasPrefix:prefix]) {
+                    bytes += [scan sizeAtIndex:i];
+                    files++;
+                }
+            struct stat st;
+            // The root must still be what was scanned: allowed, not a link, no link among its parents.
+            if (![CCPathGuard isAllowedRoot:root] || ![[CCPathGuard normalize:root] isEqualToString:root]
+                || lstat(root.fileSystemRepresentation, &st) != 0 || S_ISLNK(st.st_mode)) {
+                @synchronized (lock) { failed += files; }
+                continue;
+            }
+            BOOL removed = trash ? MoveToTrash(root)
+                         : S_ISDIR(st.st_mode) ? [NSFileManager.defaultManager removeItemAtPath:root error:nil] // never follows links
+                         : RemoveFile(root);
+            if (!removed && lstat(root.fileSystemRepresentation, &st) == 0) {
+                @synchronized (lock) { failed += files; }
+                continue;
+            }
+            @synchronized (lock) {
+                freed += bytes;
+                deleted += files;
+            }
+            report(NO);
         }
         return finish();
     }
@@ -803,6 +862,8 @@ static CCSpaceRule *Guarded(CCSpaceRule *r) {
         CCSpaceRule *hermes = Rule(@"hermes", CCSpaceDeveloper, @"brain.head.profile", CCSpaceRiskKeep, @[ @"~/.hermes" ]);
         hermes.parts = @[
             [CCSpacePart kind:@"cache" pattern:@"cache" risk:CCSpaceRiskSafe],
+            [CCSpacePart kind:@"cache" pattern:@"cache/uv" risk:CCSpaceRiskSafe],
+            [CCSpacePart kind:@"cache" pattern:@"cache/pnpm" risk:CCSpaceRiskSafe],
             [CCSpacePart kind:@"cache" pattern:@"hermes-agent/.cache" risk:CCSpaceRiskSafe],
             [CCSpacePart kind:@"cache" pattern:@"image_cache" risk:CCSpaceRiskSafe],
             [CCSpacePart kind:@"cache" pattern:@"audio_cache" risk:CCSpaceRiskSafe],
@@ -1234,6 +1295,12 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
     for (NSString *pattern in scope.guarded) [private addObjectsFromArray:ExpandFolders(pattern)];
     if (!scope.hasFullDiskAccess) [guarded unionSet:private];
 
+    // A part or listed folder of a known item that is also a cleaner target's root is cleaned as that target, from
+    // Overview, so the Disk page and Overview never offer the same bytes twice.
+    NSMutableDictionary<NSString *, NSString *> *targetOfRoot = [NSMutableDictionary dictionary];
+    for (CCTarget *target in targets)
+        for (NSString *root in [target resolveRoots]) targetOfRoot[root] = target.identifier;
+
     // 1. Known items and their parts.
     for (CCSpaceRule *rule in scope.rules) {
         NSMutableArray<NSString *> *paths = [NSMutableArray array];
@@ -1250,9 +1317,12 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
         for (NSString *root in paths) {
             if (entry.needsAccess) break;
             for (CCSpacePart *part in rule.parts)
-                for (NSString *p in ExpandFolders([root stringByAppendingPathComponent:part.pattern]))
-                    [entry.children addObject:SpaceEntry([NSString stringWithFormat:@"%@/%@", rule.identifier, part.pattern], rule.segment,
-                                                         part.risk, rule.symbol, [@"space.kind." stringByAppendingString:part.kind], nil, @[ p ])];
+                for (NSString *p in ExpandFolders([root stringByAppendingPathComponent:part.pattern])) {
+                    CCSpaceEntry *child = SpaceEntry([NSString stringWithFormat:@"%@/%@", rule.identifier, part.pattern], rule.segment,
+                                                     part.risk, rule.symbol, [@"space.kind." stringByAppendingString:part.kind], nil, @[ p ]);
+                    child.targetId = targetOfRoot[p] ?: targetOfRoot[[CCPathGuard normalize:p]];
+                    [entry.children addObject:child];
+                }
         }
         if (rule.listKind && !entry.needsAccess) {
             // A pattern with wildcards lists what it matched ("android-34/google_apis"); a plain folder lists its subfolders.
@@ -1294,9 +1364,12 @@ static BOOL EntryCanDelete(CCSpaceEntry *e) {
             }
             // One match is the item itself, not a part of it.
             if (listed.count == 1 && paths.count == 1 && [listed.firstObject isEqualToString:paths.firstObject]) [listed removeAllObjects];
-            for (NSString *p in listed)
-                [entry.children addObject:SpaceEntry([NSString stringWithFormat:@"%@/%@", rule.identifier, names[p]], rule.segment, rule.risk,
-                                                     rule.symbol, [@"space.kind." stringByAppendingString:rule.listKind], names[p], @[ p ])];
+            for (NSString *p in listed) {
+                CCSpaceEntry *child = SpaceEntry([NSString stringWithFormat:@"%@/%@", rule.identifier, names[p]], rule.segment, rule.risk,
+                                                 rule.symbol, [@"space.kind." stringByAppendingString:rule.listKind], names[p], @[ p ]);
+                child.targetId = targetOfRoot[p] ?: targetOfRoot[[CCPathGuard normalize:p]];
+                [entry.children addObject:child];
+            }
         }
         [entries addObject:entry];
     }

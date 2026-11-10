@@ -38,6 +38,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) NSMutableData *sizes;
 @property (nonatomic, copy) NSArray<CCEntry *> *topEntries;
 @property (nonatomic) long long totalBytes;
+/// For a target whose files are clones (sharesBlocks): what they share with the original, on top of totalBytes. It is
+/// freed only once the original changes (Chrome updates), so a clean does not count it.
+@property (nonatomic) long long sharedBytes;
 @property (nonatomic) NSInteger fileCount;
 @property (nonatomic) BOOL accessDenied;
 @property (nonatomic, copy, nullable) NSString *error;
