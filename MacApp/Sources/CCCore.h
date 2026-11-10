@@ -93,8 +93,11 @@ NSString *CCFormatDecimal(double value);
 @property (nonatomic, readonly) NSString *descriptionKey;
 @property (nonatomic, readonly) BOOL isCustom;
 
-/// Existing, allowed, de-duplicated root directories (symlinks resolved).
+/// Existing, allowed, de-duplicated root directories (symlinks resolved). Slow finders are answered from a cache of a
+/// few seconds.
 - (NSArray<NSString *> *)resolveRoots;
+/// The same, worked out again now: what a clean checks right before it removes a root whole.
+- (NSArray<NSString *> *)freshRoots;
 @end
 
 /// Whether the app ticks this target by itself in the given mode: custom folders always, the Trash never, otherwise the

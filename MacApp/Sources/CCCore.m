@@ -198,14 +198,17 @@ NSArray<NSString *> *CCExpandPattern(NSString *pattern) {
 - (NSString *)descriptionKey { return [NSString stringWithFormat:@"target.%@.desc", self.identifier]; }
 - (BOOL)isCustom { return self.category == CCCategoryCustom; }
 
-- (NSArray<NSString *> *)resolveRoots {
+- (NSArray<NSString *> *)resolveRoots { return [self rootsFromCache:YES]; }
+- (NSArray<NSString *> *)freshRoots { return [self rootsFromCache:NO]; }
+
+- (NSArray<NSString *> *)rootsFromCache:(BOOL)useCache {
     // Finding roots by looking at processes or walking whole folders (is it idle?) is slow, and a scan asks every
     // target for its roots several times: the answer is kept for a few seconds, minus what has gone since.
     BOOL slow = self.finder || self.idleDays > 0;
     static NSMutableDictionary<NSString *, NSArray *> *cache;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ cache = [NSMutableDictionary dictionary]; });
-    if (slow) {
+    if (slow && useCache) {
         NSArray *hit;
         @synchronized (cache) { hit = cache[self.identifier]; }
         if (hit && CFAbsoluteTimeGetCurrent() - [hit[0] doubleValue] < 20) {
@@ -239,9 +242,11 @@ NSArray<NSString *> *CCExpandPattern(NSString *pattern) {
     if (self.idleDays > 0)
         for (NSString *root in [roots.array copy])
             if (CCTouchedWithin(root, self.idleDays * 86400)) [roots removeObject:root];
+    // Targets found by a finder or an idle check never live inside a catch-all's roots, and asking them would run
+    // their slow checks for every catch-all.
     if (self.fallback)
         for (CCTarget *t in CCCatalog.allTargets)
-            if (!t.fallback) [roots minusSet:[NSSet setWithArray:[t resolveRoots]]];
+            if (!t.fallback && !t.finder && t.idleDays <= 0) [roots minusSet:[NSSet setWithArray:[t resolveRoots]]];
     if (slow) @synchronized (cache) { cache[self.identifier] = @[ @(CFAbsoluteTimeGetCurrent()), roots.array ]; }
     return roots.array;
 }
@@ -487,8 +492,10 @@ static NSArray *Join(NSArray *a, NSArray *b) { return [a arrayByAddingObjectsFro
         CCTarget *chromeClones = T(@"browser.chromeclones", CCCategoryBrowsers, @"square.on.square", CCRiskSafe, @[]);
         chromeClones.finder = ^NSArray<NSString *> * {
             NSString *root = CCChromeCloneRoot();
-            if (!root) return @[];
-            return CCStaleChromeClones(root, [CCProcesses chromeStarts:[CCProcesses snapshot] now:NSDate.date.timeIntervalSince1970]);
+            NSArray *processes = [CCProcesses snapshot];
+            // Without a list of what runs, every copy would look abandoned, the running Chrome's too.
+            if (!root || !processes) return @[];
+            return CCStaleChromeClones(root, [CCProcesses chromeStarts:processes now:NSDate.date.timeIntervalSince1970]);
         };
         chromeClones.sharesBlocks = YES;
         chromeClones.deletesWholeRoots = YES;
@@ -503,7 +510,7 @@ static NSArray *Join(NSArray *a, NSArray *b) { return [a arrayByAddingObjectsFro
         };
         cowork.deletesWholeRoots = YES;
         cowork.beforeClean = ^(NSArray<NSString *> *roots) {
-            NSArray *processes = [CCProcesses snapshot];
+            NSArray *processes = [CCProcesses snapshot] ?: @[];
             for (NSString *root in roots) [CCProcesses terminate:[CCProcesses virtualMachinesHolding:root in:processes]];
         };
         // Claude Code's per-project scratch folders: a running session writes into its own all the time.
@@ -511,10 +518,12 @@ static NSArray *Join(NSArray *a, NSArray *b) { return [a arrayByAddingObjectsFro
         claudeTmp.finder = ^NSArray<NSString *> * {
             NSString *base = [NSString stringWithFormat:@"/private/tmp/claude-%u", getuid()];
             NSMutableArray *found = [NSMutableArray array];
+            struct stat st;
+            // /tmp is everyone's: the folder must be a real one of the user's, not a link someone else planted.
+            if (lstat(base.fileSystemRepresentation, &st) != 0 || !S_ISDIR(st.st_mode) || st.st_uid != getuid()) return found;
             for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:base error:nil] ?: @[]) {
                 NSString *path = [base stringByAppendingPathComponent:name];
-                struct stat st;
-                if (lstat(path.fileSystemRepresentation, &st) == 0 && S_ISDIR(st.st_mode)) [found addObject:path];
+                if (lstat(path.fileSystemRepresentation, &st) == 0 && S_ISDIR(st.st_mode) && st.st_uid == getuid()) [found addObject:path];
             }
             return found;
         };
@@ -529,7 +538,9 @@ static NSArray *Join(NSArray *a, NSArray *b) { return [a arrayByAddingObjectsFro
                 for (NSString *prefix in @[ @"tmp", @"pymp-", @"jobs-test-", @"flk.", @"flk_", @"go-build", @"cns-" ]) ours |= [name hasPrefix:prefix];
                 NSString *path = [@"/private/tmp" stringByAppendingPathComponent:name];
                 struct stat st;
-                if (ours && lstat(path.fileSystemRepresentation, &st) == 0 && (S_ISDIR(st.st_mode) || S_ISREG(st.st_mode))) [found addObject:path];
+                if (ours && lstat(path.fileSystemRepresentation, &st) == 0 && (S_ISDIR(st.st_mode) || S_ISREG(st.st_mode))
+                    && st.st_uid == getuid())
+                    [found addObject:path];
             }
             return found;
         };

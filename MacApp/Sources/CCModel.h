@@ -29,6 +29,8 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 @property (nonatomic, readonly) BOOL isPresent;
 /// Looks for the roots again: junk that comes and goes (an abandoned Chrome copy, a finished session's folder).
 - (void)refreshPresence;
+/// Roots worked out elsewhere (a scan finds them off the main thread).
+- (void)applyRoots:(NSArray<NSString *> *)roots;
 @property (nonatomic) BOOL enabled;
 @property (nonatomic) long long bytes;
 @property (nonatomic) NSInteger fileCount;

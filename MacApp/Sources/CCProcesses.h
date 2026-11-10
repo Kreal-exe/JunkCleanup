@@ -47,8 +47,9 @@ double CCParseElapsed(NSString *text);
 double CCParseCPUTime(NSString *text);
 
 @interface CCProcesses : NSObject
-/// Every process, from ps.
-+ (NSArray<CCProcess *> *)snapshot;
+/// Every process, from ps; nil when ps failed, timed out or gave a list without launchd (an empty list would make
+/// every Chrome copy look abandoned).
++ (nullable NSArray<CCProcess *> *)snapshot;
 /// ps -Awwo pid=,ppid=,etime=,time=,pcpu=,rss=,args= output → processes.
 + (NSArray<CCProcess *> *)parse:(NSString *)psOutput;
 /// When each running Chrome started (its main process, any profile), seconds since 1970.
@@ -61,6 +62,8 @@ double CCParseCPUTime(NSString *text);
 + (NSArray<NSNumber *> *)virtualMachinesHolding:(NSString *)path in:(NSArray<CCProcess *> *)processes;
 /// SIGTERM, and SIGKILL to what is still there a moment later.
 + (void)terminate:(NSArray<NSNumber *> *)pids;
+/// Ends it only when that pid still runs the same command line: a pid freed since the check may belong to anything.
++ (BOOL)terminateIfUnchanged:(CCStuckProcess *)process;
 /// The script that closes the Hermes browser properly, when it is installed.
 + (nullable NSString *)hermesStopScript;
 /// Runs it; YES when the browser closed.

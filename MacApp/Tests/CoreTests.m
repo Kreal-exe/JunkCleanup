@@ -757,6 +757,27 @@ static void TestChromeClones(void) {
     CHECK(result.filesDeleted == 2 && result.failed == 0 && result.bytesFreed == scan.totalBytes, @"clean counts");
     EQUAL(stopped, @[ old ]);
 
+    // The scan is old by the time Clean is pressed: what is no longer junk (Cowork opened, a session resumed) stays.
+    NSString *resumed = [Scratch() stringByAppendingPathComponent:@"session"];
+    Write([resumed stringByAppendingPathComponent:@"work.txt"], 100);
+    __block NSArray *junkNow = @[ resumed ];
+    CCTarget *g = [CCTarget new];
+    g.identifier = @"test.resumed";
+    g.finder = ^{ return junkNow; };
+    g.deletesWholeRoots = YES;
+    __block BOOL stoppedAnything = NO;
+    g.beforeClean = ^(NSArray<NSString *> *roots) { stoppedAnything = YES; };
+    CCScanResult *old2 = [[CCScanEngine new] scanTarget:g options:options cancel:nil onBytes:nil];
+    junkNow = @[];
+    CCTargetCleanResult *kept = [[CCCleanEngine new] cleanTarget:old2 options:clean cancel:nil onProgress:nil];
+    CHECK(Exists(resumed) && kept.filesDeleted == 0 && kept.failed == 1 && !stoppedAnything, @"a root that is no longer junk was removed");
+
+    // ps answers with launchd in the list; without a list, no copy is taken for abandoned.
+    NSArray *running = [CCProcesses snapshot];
+    BOOL hasLaunchd = NO;
+    for (CCProcess *p in running) hasLaunchd |= p.pid == 1;
+    CHECK(running.count > 10 && hasLaunchd, @"process snapshot");
+
     // A real APFS clone shares every block: removing it frees nothing until the original changes.
     NSString *original = [Scratch() stringByAppendingPathComponent:@"original.bin"];
     Write(original, 1 << 20);

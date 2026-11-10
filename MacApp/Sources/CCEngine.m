@@ -496,12 +496,21 @@ static void PruneEmpty(NSString *dir, NSSet<NSString *> *keep, CCCancelToken *ca
         return finish();
     }
 
-    if (scan.target.beforeClean && roots.count) scan.target.beforeClean(roots);
-
     // A root that is junk as a whole goes in one piece: an app's copy is full of framework links, which a file-by-file
     // clean never follows and so would leave behind as an empty tree.
     if (scan.target.deletesWholeRoots) {
-        for (NSString *root in roots) {
+        // The scan may be hours old: only what is still junk now goes (Cowork opened since, a session resumed).
+        NSSet *still = [NSSet setWithArray:[scan.target freshRoots]];
+        NSMutableArray<NSString *> *now = [NSMutableArray array];
+        for (NSString *root in roots)
+            if ([still containsObject:root]) [now addObject:root];
+            else {
+                NSString *prefix = [root stringByAppendingString:@"/"];
+                for (NSString *file in scan.files)
+                    if ([file isEqualToString:root] || [file hasPrefix:prefix]) failed++;
+            }
+        if (scan.target.beforeClean && now.count) scan.target.beforeClean(now);
+        for (NSString *root in now) {
             if (cancel.isCancelled) break;
             long long bytes = 0;
             NSInteger files = 0;
@@ -514,7 +523,7 @@ static void PruneEmpty(NSString *dir, NSSet<NSString *> *keep, CCCancelToken *ca
             struct stat st;
             // The root must still be what was scanned: allowed, not a link, no link among its parents.
             if (![CCPathGuard isAllowedRoot:root] || ![[CCPathGuard normalize:root] isEqualToString:root]
-                || lstat(root.fileSystemRepresentation, &st) != 0 || S_ISLNK(st.st_mode)) {
+                || lstat(root.fileSystemRepresentation, &st) != 0 || S_ISLNK(st.st_mode) || st.st_uid != getuid()) {
                 @synchronized (lock) { failed += files; }
                 continue;
             }
@@ -533,6 +542,8 @@ static void PruneEmpty(NSString *dir, NSSet<NSString *> *keep, CCCancelToken *ca
         }
         return finish();
     }
+
+    if (scan.target.beforeClean && roots.count) scan.target.beforeClean(roots);
 
     NSMutableSet<NSString *> *handled = [NSMutableSet set];
     NSMutableSet<NSString *> *touched = [NSMutableSet set];

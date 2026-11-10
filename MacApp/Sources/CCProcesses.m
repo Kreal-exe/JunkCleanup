@@ -41,7 +41,7 @@ static double ParseClock(NSString *text) {
 double CCParseElapsed(NSString *text) { return ParseClock(text); }
 double CCParseCPUTime(NSString *text) { return ParseClock(text); }
 
-/// Runs a tool and returns what it printed, killing it when it takes longer than `timeout`.
+/// Runs a tool and returns what it printed; nil when it could not start, was killed after `timeout` or failed.
 static NSString *Run(NSString *tool, NSArray<NSString *> *arguments, NSTimeInterval timeout) {
     NSTask *task = [NSTask new];
     task.executableURL = [NSURL fileURLWithPath:tool];
@@ -49,19 +49,22 @@ static NSString *Run(NSString *tool, NSArray<NSString *> *arguments, NSTimeInter
     NSPipe *pipe = [NSPipe pipe];
     task.standardOutput = pipe;
     task.standardError = [NSFileHandle fileHandleWithNullDevice];
-    if (![task launchAndReturnError:nil]) return @"";
+    if (![task launchAndReturnError:nil]) return nil;
     __block NSData *data = nil;
     dispatch_semaphore_t read = dispatch_semaphore_create(0);
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         data = [pipe.fileHandleForReading readDataToEndOfFile];
         dispatch_semaphore_signal(read);
     });
+    BOOL timedOut = NO;
     if (dispatch_semaphore_wait(read, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC))) != 0) {
+        timedOut = YES;
         [task terminate];
         dispatch_semaphore_wait(read, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC));
     }
     [task waitUntilExit];
-    return data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"" : @"";
+    if (timedOut || task.terminationStatus != 0 || !data) return nil;
+    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
 }
 
 static NSArray<CCProcess *> *ChildrenOf(NSArray<CCProcess *> *processes, pid_t pid) {
@@ -98,7 +101,12 @@ static BOOL IsDiskWideRoot(NSString *arg) {
 @implementation CCProcesses
 
 + (NSArray<CCProcess *> *)snapshot {
-    return [self parse:Run(@"/bin/ps", @[ @"-Awwo", @"pid=,ppid=,etime=,time=,pcpu=,rss=,args=" ], 15)];
+    NSString *output = Run(@"/bin/ps", @[ @"-Awwo", @"pid=,ppid=,etime=,time=,pcpu=,rss=,args=" ], 15);
+    if (!output) return nil;
+    NSArray<CCProcess *> *list = [self parse:output];
+    for (CCProcess *p in list)
+        if (p.pid == 1) return list;
+    return nil;
 }
 
 + (NSArray<CCProcess *> *)parse:(NSString *)psOutput {
@@ -205,7 +213,7 @@ static BOOL IsDiskWideRoot(NSString *arg) {
         if (![p.args containsString:@"com.apple.Virtualization.VirtualMachine"]) continue;
         // One pid at a time, -b and -w: lsof over everything hangs on a network share.
         NSString *open = Run(@"/usr/sbin/lsof", @[ @"-b", @"-n", @"-w", @"-p", [NSString stringWithFormat:@"%d", p.pid] ], 15);
-        if ([open containsString:path]) [pids addObject:@(p.pid)];
+        if (open && [open containsString:path]) [pids addObject:@(p.pid)];
     }
     return pids;
 }
@@ -220,6 +228,15 @@ static BOOL IsDiskWideRoot(NSString *arg) {
         usleep(100000);
     }
     for (NSNumber *pid in pids) kill(pid.intValue, SIGKILL);
+}
+
++ (BOOL)terminateIfUnchanged:(CCStuckProcess *)process {
+    for (CCProcess *p in [self snapshot] ?: @[])
+        if (p.pid == process.pid && [p.args isEqualToString:process.commandLine] && p.age >= process.minutes * 60 - 5) {
+            [self terminate:@[ @(p.pid) ]];
+            return YES;
+        }
+    return NO;
 }
 
 + (NSString *)hermesStopScript {

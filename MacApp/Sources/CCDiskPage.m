@@ -222,8 +222,8 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     [self changed];
 
     NSMutableArray<CCTarget *> *targets = [NSMutableArray array];
-    for (CCTargetItem *t in M().targets)
-        if (t.isPresent) [targets addObject:t.target];
+    // Every target: the engine finds their roots itself, off the main thread, including those a scan has yet to find.
+    for (CCTargetItem *t in M().targets) [targets addObject:t.target];
     [self refreshVolumes];
     CCSpaceScope *scope = _selectedVolume ? [CCSpaceCatalog scopeForVolume:_selectedVolume fullDiskAccess:M().hasFullDiskAccess]
                                           : [CCSpaceCatalog scopeWithFullDiskAccess:M().hasFullDiskAccess];

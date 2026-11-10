@@ -28,7 +28,8 @@ static BOOL HasFullDiskAccess(void) {
     if ((self = [super init])) {
         _target = target;
         _identifier = target.identifier;
-        _roots = [target resolveRoots];
+        // Targets found by looking at processes or walking whole folders are found by the first scan, off the main thread.
+        _roots = target.finder || target.idleDays > 0 ? @[] : [target resolveRoots];
         _isPresent = _roots.count > 0;
         _enabled = enabled && _isPresent;
         _topEntries = @[];
@@ -36,8 +37,10 @@ static BOOL HasFullDiskAccess(void) {
     return self;
 }
 
-- (void)refreshPresence {
-    _roots = [self.target resolveRoots];
+- (void)refreshPresence { [self applyRoots:[self.target resolveRoots]]; }
+
+- (void)applyRoots:(NSArray<NSString *> *)roots {
+    _roots = [roots copy];
     _isPresent = _roots.count > 0;
     if (!_isPresent) _enabled = NO;
 }
@@ -278,6 +281,13 @@ static BOOL HasFullDiskAccess(void) {
     if (!item) return;
     if (!item.isPresent) [item refreshPresence];
     if (!item.isPresent || item.enabled) return;
+    if (self.selectionMode != CCSelectionManual && CCAutoSelects(item.target, self.selectionMode)) {
+        // It turned up after the mode last picked: the mode picks it, no need to leave it.
+        item.enabled = YES;
+        [self recalc];
+        [self changed];
+        return;
+    }
     [self setTarget:item enabled:YES];
 }
 
@@ -403,14 +413,36 @@ static BOOL HasFullDiskAccess(void) {
     self.displayBytes = 0;
     [_liveBytes removeAllObjects];
     _scanCompleted = 0;
+    __weak CCModel *weakSelf = self;
+    [self setStatus:^NSString *{ return L(@"targets.scanning"); }];
+    [self post:CCModelScanStateNotification];
+    [self changed];
+    // What is there to scan: some targets look at processes or walk whole folders to know, so off the main thread.
+    NSArray<CCTargetItem *> *items = [_targets copy];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSMutableArray *roots = [NSMutableArray array];
+        for (CCTargetItem *t in items) [roots addObject:[t.target resolveRoots]];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            CCModel *s = weakSelf;
+            if (!s || token != s->_scanToken) return;
+            if (token.isCancelled) {
+                [s finishScan:token seconds:0 count:0];
+                return;
+            }
+            for (NSUInteger i = 0; i < items.count; i++) [items[i] applyRoots:roots[i]];
+            [s beginScan:token];
+        });
+    });
+}
+
+- (void)beginScan:(CCCancelToken *)token {
     NSMutableArray<CCTarget *> *targets = [NSMutableArray array];
     NSMutableSet<NSString *> *allRoots = [NSMutableSet set];
-    for (CCTargetItem *t in _targets) [t refreshPresence];
     [self applySelection];
     for (CCTargetItem *t in _targets) {
         [t resetForScan];
         if (t.isPresent) [targets addObject:t.target];
-        [allRoots addObjectsFromArray:[t.target resolveRoots]];
+        [allRoots addObjectsFromArray:t.roots];
     }
     _scanTotal = (NSInteger)targets.count;
     self.currentTargetName = @"";
@@ -596,7 +628,8 @@ static BOOL HasFullDiskAccess(void) {
     [self leaveAutoSelection];
     for (CCTargetItem *t in _targets) {
         t.enabled = t.isPresent && predicate(t);
-        self.settings.targetStates[t.identifier] = @(t.enabled);
+        // What is not there keeps its saved tick, for when it turns up.
+        if (t.isPresent) self.settings.targetStates[t.identifier] = @(t.enabled);
     }
     [self saveSettings];
     [self recalc];
@@ -806,7 +839,7 @@ static BOOL HasFullDiskAccess(void) {
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             // Hermes' Chrome is closed by its own script, which waits for whoever is using it; a tab is never killed.
             if (process.kind == CCStuckHermesTab) [CCProcesses stopHermesBecause:@"JunkCleanup: Hermes tab is stuck"];
-            else [CCProcesses terminate:@[ @(process.pid) ]];
+            else [CCProcesses terminateIfUnchanged:process];
             dispatch_async(dispatch_get_main_queue(), ^{
                 [NSNotificationCenter.defaultCenter postNotificationName:CCModelToastNotification object:self
                                                                 userInfo:@{ @"symbol": @"checkmark", @"text": LF(@"stuck.done", what) }];
