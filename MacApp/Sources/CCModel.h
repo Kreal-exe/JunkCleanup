@@ -5,6 +5,7 @@
 #import "CCEngine.h"
 #import "CCInsights.h"
 #import "CCSettings.h"
+#import "CCProcesses.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -26,6 +27,8 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 @property (nonatomic, copy, readonly) NSString *identifier;
 @property (nonatomic, copy) NSArray<NSString *> *roots;
 @property (nonatomic, readonly) BOOL isPresent;
+/// Looks for the roots again: junk that comes and goes (an abandoned Chrome copy, a finished session's folder).
+- (void)refreshPresence;
 @property (nonatomic) BOOL enabled;
 @property (nonatomic) long long bytes;
 @property (nonatomic) NSInteger fileCount;
@@ -137,9 +140,16 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 - (void)clean;
 - (void)cancelClean;
 - (void)closeCleanOverlay;
-- (void)selectSafe;
-- (void)selectAll;
+/// How targets are picked: by the app from their risk (Safe, Safe + Moderate) or by hand. Any tick changed by hand
+/// switches to Manual, starting from what was ticked.
+@property (nonatomic, readonly) CCSelectionMode selectionMode;
+/// Manual brings back the ticks last set by hand.
+- (void)setSelectionMode:(CCSelectionMode)mode;
 - (void)selectNone;
+/// Ticks one target (from the Disk page), leaving the automatic mode only when the mode would not pick it.
+- (void)includeTarget:(NSString *)identifier;
+/// The Disk page's Clean: ticks the target (nil for all caches), opens Overview and scans when nothing was scanned yet.
+- (void)cleanFromDisk:(nullable NSString *)targetId;
 - (void)setTarget:(CCTargetItem *)target enabled:(BOOL)enabled;
 - (void)setCategory:(CCCategoryItem *)category enabled:(BOOL)enabled;
 - (void)openCategory:(CCCategoryItem *)category;
@@ -153,6 +163,13 @@ typedef NS_ENUM(NSInteger, CCTargetState) { CCTargetIdle, CCTargetScanning, CCTa
 /// Moves one entry to the Trash (or deletes it, per the setting); the answer arrives on the main thread.
 - (void)deleteEntry:(CCEntry *)entry ofTarget:(CCTargetItem *)target completion:(void (^)(BOOL ok))completion;
 - (void)runInsightAction:(CCInsight *)insight;
+/// Processes that are stuck (an orphaned Claude shell loop, a disk-wide search, a bloated Hermes tab); refreshed with
+/// the insights.
+@property (nonatomic, readonly) NSArray<CCStuckProcess *> *stuckProcesses;
+/// The Hermes tab is closed with the whole Hermes browser, through its own stop script; nothing else can end it.
+- (BOOL)canTerminate:(CCStuckProcess *)process;
+/// Asks, then ends it.
+- (void)terminateStuck:(CCStuckProcess *)process;
 - (void)refreshInsights;
 /// Space freed outside a clean (the Disk page), added to the all-time total.
 - (void)addFreed:(long long)bytes;

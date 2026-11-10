@@ -510,10 +510,11 @@ static CCModel *M(void) { return CCModel.shared; }
     _accessPill.hidden = !m.hasFullDiskAccess;
     _accessPill.label.stringValue = L(@"titlebar.admin");
     _themeButton.toolTip = L(@"titlebar.theme");
-    // What each page holds, at the edge of its sidebar item: found caches, and what the disk map can remove safely.
-    _navItems[CCPageTargets].detail = m.hasResults && m.foundBytes > 0 ? CCFormatBytes(m.foundBytes) : nil;
-    long long safe = CCDiskModel.shared.report ? [CCDiskModel.shared safeBytes] : 0;
-    _navItems[CCPageDisk].detail = safe > 0 ? CCFormatBytes(safe) : nil;
+    // One number at the edge of the sidebar: what a press of Clean frees, the same on Overview and the Disk page.
+    long long cleanable = m.hasResults && !m.scanning ? m.cleanableBytes : 0;
+    _navItems[CCPageDashboard].detail = cleanable > 0 ? CCFormatBytes(cleanable) : nil;
+    _navItems[CCPageTargets].detail = nil;
+    _navItems[CCPageDisk].detail = nil;
     for (CCPageView *page in _pages)
         if (!page.hidden) [page refresh];
     if (m.overlayVisible) [_cleanOverlay refresh];
@@ -692,7 +693,9 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
     __block BOOL settled = NO, diskSettled = NO;
     NSArray *shots = @[ @"dashboard", @"targets", @"disk", @"settings", @"settings-cleaning", @"about", @"insights", @"light", @"expanded", @"details", @"confirm" ];
     // --capture-clean also runs the clean it asked about (into the Trash by default) and shoots the result.
-    if ([NSProcessInfo.processInfo.arguments containsObject:@"--capture-clean"]) shots = [shots arrayByAddingObject:@"cleaning"];
+    // Then Overview and the Disk page once the clean is over, to see the numbers go down together.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--capture-clean"])
+        shots = [shots arrayByAddingObjectsFromArray:@[ @"cleaning", @"after", @"after-disk" ]];
     // --page disk shoots only the Disk page: the map, then an item with its parts open. Nothing is scanned or removed.
     NSArray *args = NSProcessInfo.processInfo.arguments;
     NSUInteger pageArg = [args indexOfObject:@"--page"];
@@ -799,6 +802,13 @@ typedef CGImageRef (*CreateWindowImage)(CGRect, CGWindowListOption, CGWindowID, 
             M().page = CCPageDashboard;
             // Only to shoot the question: with "Ask before cleaning" off, Clean would start right away.
             if (M().settings.confirmClean) [M() clean];
+        } else if ([shot isEqualToString:@"after"]) {
+            [M() closeCleanOverlay];
+            M().page = CCPageDashboard;
+            NSScrollView *scroll = s->_pages[CCPageDashboard].subviews.firstObject;
+            [scroll.documentView scrollPoint:NSZeroPoint];
+        } else if ([shot isEqualToString:@"after-disk"]) {
+            M().page = CCPageDisk;
         } else if ([shot isEqualToString:@"cleaning"]) {
             [s->_confirm closeWith:YES];
             after(0.5, next);

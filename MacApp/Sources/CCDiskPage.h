@@ -31,14 +31,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)analyze;
 - (void)cancel;
 
-/// Every Safe part outside the cleaner's targets (those are cleaned from the Targets page).
-- (NSArray<CCSpaceEntry *> *)safeParts;
-- (long long)safeBytes;
 /// What can go without a second thought inside one item: the item when it is Safe, else its Safe parts.
 + (NSArray<CCSpaceEntry *> *)safePartsOf:(CCSpaceEntry *)entry;
 
-/// Asks, then removes every Safe part.
-- (void)removeSafe;
 /// Into the Trash or permanently, per the settings; the answer arrives on the main thread.
 - (void)remove:(CCSpaceEntry *)entry completion:(nullable void (^)(BOOL ok))completion;
 /// Lists what an app leaves in ~/Library, asks, then moves the app and all of it to the Trash.

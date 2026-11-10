@@ -36,6 +36,12 @@ static BOOL HasFullDiskAccess(void) {
     return self;
 }
 
+- (void)refreshPresence {
+    _roots = [self.target resolveRoots];
+    _isPresent = _roots.count > 0;
+    if (!_isPresent) _enabled = NO;
+}
+
 - (NSString *)name { return self.target.displayName ?: L(self.target.nameKey); }
 - (NSString *)details { return self.target.isCustom ? L(@"target.custom.desc") : L(self.target.descriptionKey); }
 - (NSString *)riskText { return L([@"risk." stringByAppendingString:CCRiskName(self.target.risk)]); }
@@ -56,7 +62,10 @@ static BOOL HasFullDiskAccess(void) {
         case CCTargetScanning: return L(@"targets.scanning");
         case CCTargetDenied: return L(@"targets.needsAdmin");
         case CCTargetError: return LF(@"targets.error", self.error ?: @"");
-        case CCTargetDone: return self.bytes == 0 ? L(@"targets.empty") : @"";
+        case CCTargetDone:
+            if (self.target.sharesBlocks && self.lastResult.sharedBytes > 0 && self.fileCount > 0)
+                return LF(@"targets.shared", CCFormatBytes(self.lastResult.sharedBytes));
+            return self.bytes == 0 ? L(@"targets.empty") : @"";
         case CCTargetIdle: return self.isPresent ? L(@"targets.notScanned") : L(@"targets.notPresent");
     }
     return @"";
@@ -165,6 +174,7 @@ static BOOL HasFullDiskAccess(void) {
     NSMutableArray<CCCategoryItem *> *_categories;
     NSArray<CCTargetItem *> *_topTargets;
     NSArray<CCInsight *> *_insights;
+    NSArray<CCStuckProcess *> *_stuck;
     NSMutableArray<CCCleanLogItem *> *_cleanLog;
     CCCancelToken *_scanToken;
     CCCancelToken *_cleanToken;
@@ -192,6 +202,7 @@ static BOOL HasFullDiskAccess(void) {
         _cleanLog = [NSMutableArray array];
         _topTargets = @[];
         _insights = @[];
+        _stuck = @[];
         _searchText = @"";
         _filter = @"All";
         _statusText = @"";
@@ -224,11 +235,57 @@ static BOOL HasFullDiskAccess(void) {
 - (NSArray<CCCategoryItem *> *)categories { return _categories; }
 - (NSArray<CCTargetItem *> *)topTargets { return _topTargets; }
 - (NSArray<CCInsight *> *)insights { return _insights; }
+- (NSArray<CCStuckProcess *> *)stuckProcesses { return _stuck; }
 - (NSArray<CCCleanLogItem *> *)cleanLog { return _cleanLog; }
 
-- (CCTargetItem *)itemForTarget:(CCTarget *)target {
+- (CCSelectionMode)selectionMode { return CCSelectionModeFromName(self.settings.selectionMode); }
+
+/// The tick a target gets in the current mode: from its risk, or what was set by hand.
+- (BOOL)tickFor:(CCTarget *)target {
+    if (self.selectionMode != CCSelectionManual) return CCAutoSelects(target, self.selectionMode);
     NSNumber *saved = self.settings.targetStates[target.identifier];
-    return [[CCTargetItem alloc] initWithTarget:target enabled:saved ? saved.boolValue : target.enabledByDefault];
+    // A target never ticked or unticked by hand (one added in a later version) gets what Safe mode would give it.
+    return saved ? saved.boolValue : CCAutoSelects(target, CCSelectionSafe);
+}
+
+- (CCTargetItem *)itemForTarget:(CCTarget *)target {
+    return [[CCTargetItem alloc] initWithTarget:target enabled:[self tickFor:target]];
+}
+
+- (void)applySelection {
+    for (CCTargetItem *t in _targets) t.enabled = t.isPresent && [self tickFor:t.target];
+}
+
+- (void)setSelectionMode:(CCSelectionMode)mode {
+    self.settings.selectionMode = CCSelectionModeName(mode);
+    [self applySelection];
+    [self saveSettings];
+    [self recalc];
+    [self changed];
+}
+
+/// Before a change by hand: what the app picked becomes the starting point of the user's own choice.
+- (void)leaveAutoSelection {
+    CCSelectionMode mode = self.selectionMode;
+    if (mode == CCSelectionManual) return;
+    for (CCTargetItem *t in _targets)
+        self.settings.targetStates[t.identifier] = @(t.isPresent ? t.enabled : CCAutoSelects(t.target, mode));
+    self.settings.selectionMode = CCSelectionModeName(CCSelectionManual);
+}
+
+- (void)includeTarget:(NSString *)identifier {
+    CCTargetItem *item = [self itemWithId:identifier];
+    if (!item) return;
+    if (!item.isPresent) [item refreshPresence];
+    if (!item.isPresent || item.enabled) return;
+    [self setTarget:item enabled:YES];
+}
+
+- (void)cleanFromDisk:(NSString *)targetId {
+    if (targetId) [self includeTarget:targetId];
+    self.page = CCPageDashboard;
+    CCTargetItem *item = targetId ? [self itemWithId:targetId] : nil;
+    if (!self.scanning && !self.cleaning && (!self.hasResults || (item && !item.lastResult))) [self startScan];
 }
 
 - (void)rebuildCategories {
@@ -286,8 +343,11 @@ static BOOL HasFullDiskAccess(void) {
 /// Clean again would not remove it either.
 - (NSArray<CCTargetItem *> *)selectable {
     NSMutableArray<CCTargetItem *> *list = [NSMutableArray array];
-    for (CCTargetItem *t in _targets)
-        if (t.isPresent && t.enabled && t.lastResult && t.bytes > 0 && !t.hasLeftovers) [list addObject:t];
+    for (CCTargetItem *t in _targets) {
+        // Clones that share all their blocks free nothing today, but they are still junk: removed with the rest.
+        BOOL hasSomething = t.bytes > 0 || (t.target.sharesBlocks && t.fileCount > 0);
+        if (t.isPresent && t.enabled && t.lastResult && hasSomething && !t.hasLeftovers) [list addObject:t];
+    }
     return list;
 }
 
@@ -345,6 +405,8 @@ static BOOL HasFullDiskAccess(void) {
     _scanCompleted = 0;
     NSMutableArray<CCTarget *> *targets = [NSMutableArray array];
     NSMutableSet<NSString *> *allRoots = [NSMutableSet set];
+    for (CCTargetItem *t in _targets) [t refreshPresence];
+    [self applySelection];
     for (CCTargetItem *t in _targets) {
         [t resetForScan];
         if (t.isPresent) [targets addObject:t.target];
@@ -415,6 +477,7 @@ static BOOL HasFullDiskAccess(void) {
         [self setStatus:^NSString *{ return LF(@"dash.lastScan", @(count), CCFormatDecimal(seconds), CCFormatCount(files)); }];
     }
     [self post:CCModelScanStateNotification];
+    if (!cancelled) [self refreshInsights];
     [self changed];
 }
 
@@ -530,6 +593,7 @@ static BOOL HasFullDiskAccess(void) {
 // ───────────── selection ─────────────
 
 - (void)bulkSelect:(BOOL (^)(CCTargetItem *t))predicate {
+    [self leaveAutoSelection];
     for (CCTargetItem *t in _targets) {
         t.enabled = t.isPresent && predicate(t);
         self.settings.targetStates[t.identifier] = @(t.enabled);
@@ -546,14 +610,10 @@ static BOOL HasFullDiskAccess(void) {
     return sum;
 }
 
-- (void)selectSafe {
-    [self bulkSelect:^BOOL(CCTargetItem *t) { return t.target.risk == CCRiskSafe && !t.target.alwaysPermanent; }];
-}
-// All means every target found, Careful ones too; the category switches still leave Careful ones to be ticked by hand.
-- (void)selectAll { [self bulkSelect:^BOOL(CCTargetItem *t) { return YES; }]; }
 - (void)selectNone { [self bulkSelect:^BOOL(CCTargetItem *t) { return NO; }]; }
 
 - (void)setTarget:(CCTargetItem *)target enabled:(BOOL)enabled {
+    [self leaveAutoSelection];
     target.enabled = enabled && target.isPresent;
     self.settings.targetStates[target.identifier] = @(target.enabled);
     [self saveSettings];
@@ -713,8 +773,10 @@ static BOOL HasFullDiskAccess(void) {
         if (t.target.alwaysPermanent && t.enabled) trashEnabled = YES;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSArray *found = [CCInsights scanWithTrashTargetEnabled:trashEnabled];
+        NSArray *stuck = [CCProcesses stuckIn:[CCProcesses snapshot] hermesIdleMinutes:[CCProcesses hermesIdleMinutes]];
         dispatch_async(dispatch_get_main_queue(), ^{
             self->_insights = found;
+            self->_stuck = stuck;
             [self post:CCModelInsightsNotification];
             [self changed];
         });
@@ -729,6 +791,34 @@ static BOOL HasFullDiskAccess(void) {
                                                         userInfo:@{ @"symbol": @"doc.on.doc", @"text": LF(@"insight.copied", insight.payload) }];
     } else if (insight.action == CCInsightActionOpenURL && insight.payload) {
         [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:insight.payload]];
+    }
+}
+
+- (BOOL)canTerminate:(CCStuckProcess *)process {
+    return process.kind != CCStuckHermesTab || [CCProcesses hermesStopScript] != nil;
+}
+
+- (void)terminateStuck:(CCStuckProcess *)process {
+    if (![self canTerminate:process]) return;
+    NSString *what = L([NSString stringWithFormat:@"stuck.%@.name", process.kindName]);
+    void (^go)(BOOL) = ^(BOOL ok) {
+        if (!ok) return;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            // Hermes' Chrome is closed by its own script, which waits for whoever is using it; a tab is never killed.
+            if (process.kind == CCStuckHermesTab) [CCProcesses stopHermesBecause:@"JunkCleanup: Hermes tab is stuck"];
+            else [CCProcesses terminate:@[ @(process.pid) ]];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [NSNotificationCenter.defaultCenter postNotificationName:CCModelToastNotification object:self
+                                                                userInfo:@{ @"symbol": @"checkmark", @"text": LF(@"stuck.done", what) }];
+                [self refreshInsights];
+            });
+        });
+    };
+    if (self.confirm) {
+        self.confirmSymbol = @"xmark.octagon";
+        self.confirm(LF(@"stuck.confirmTitle", what), L([NSString stringWithFormat:@"stuck.%@.confirm", process.kindName]), L(@"stuck.terminate"), YES, go);
+    } else {
+        go(YES);
     }
 }
 
@@ -781,7 +871,7 @@ static BOOL HasFullDiskAccess(void) {
     self.settings.windowWidth = width;
     self.settings.windowHeight = height;
     self.settings.lifetimeBytesFreed = lifetime;
-    for (CCTargetItem *t in _targets) t.enabled = t.target.enabledByDefault && t.isPresent;
+    [self applySelection];
     _suppressSave = NO;
     [self saveSettings];
     [self recalc];

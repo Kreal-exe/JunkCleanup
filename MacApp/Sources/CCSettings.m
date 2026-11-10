@@ -18,6 +18,7 @@
     _scanOnStartup = YES;
     _measureDiskWithScan = YES;
     _confirmClean = YES;
+    _selectionMode = @"safe";
     _targetStates = [NSMutableDictionary dictionary];
     _customFolders = [NSMutableArray array];
 }
@@ -62,6 +63,7 @@ static id Get(NSDictionary *d, NSString *key, Class type) {
     if ((n = Get(d, @"windowHeight", NSNumber.class))) s.windowHeight = n.doubleValue;
     if ((n = Get(d, @"lifetimeBytesFreed", NSNumber.class))) s.lifetimeBytesFreed = n.longLongValue;
 
+    s.selectionMode = CCSelectionModeName(CCSelectionModeFromName(Get(d, @"selectionMode", NSString.class)));
     NSDictionary *states = Get(d, @"targetStates", NSDictionary.class);
     for (NSString *key in states)
         if ([states[key] isKindOfClass:NSNumber.class]) s.targetStates[key] = states[key];
@@ -81,6 +83,7 @@ static id Get(NSDictionary *d, NSString *key, Class type) {
         @"scanOnLaunch": @(self.scanOnStartup),
         @"measureDiskWithScan": @(self.measureDiskWithScan),
         @"confirmClean": @(self.confirmClean),
+        @"selectionMode": self.selectionMode,
         @"targetStates": self.targetStates,
         @"customFolders": self.customFolders,
         @"windowWidth": @(self.windowWidth),

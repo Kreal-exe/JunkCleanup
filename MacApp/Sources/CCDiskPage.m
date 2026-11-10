@@ -282,62 +282,9 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     return parts;
 }
 
-- (NSArray<CCSpaceEntry *> *)safeParts {
-    NSMutableArray *parts = [NSMutableArray array];
-    for (CCSpaceEntry *item in self.report.items)
-        if (!IsCleanable(item)) [parts addObjectsFromArray:[CCDiskModel safePartsOf:item]];
-    return parts;
-}
-
-- (long long)safeBytes {
-    long long sum = 0;
-    for (CCSpaceEntry *e in [self safeParts]) sum += e.bytes;
-    return sum;
-}
-
 - (BOOL)isBusy:(CCSpaceEntry *)entry { return [_busy containsObject:entry]; }
 
 // ───────────── removing ─────────────
-
-- (void)removeSafe {
-    NSArray<CCSpaceEntry *> *parts = [self safeParts];
-    if (parts.count == 0 || self.analyzing) return;
-    long long bytes = 0;
-    for (CCSpaceEntry *e in parts) bytes += e.bytes;
-    NSString *title = LF(@"disk.removeSafe.title", CCFormatBytes(bytes));
-    NSString *body = LF(@"disk.removeSafe.body", @(parts.count));
-    __weak CCDiskModel *weak = self;
-    void (^go)(BOOL) = ^(BOOL ok) {
-        if (ok) [weak removeAll:parts];
-    };
-    if (M().confirm) M().confirm(title, body, L(@"disk.removeSafe"), NO, go);
-}
-
-- (void)removeAll:(NSArray<CCSpaceEntry *> *)parts {
-    if (!self.report || self.analyzing) return;
-    BOOL trash = M().settings.useTrash;
-    CCSpaceReport *report = self.report;
-    [_busy addObjectsFromArray:parts];
-    [self changed];
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        CCDiskMapEngine *engine = [CCDiskMapEngine new];
-        NSMutableArray<NSNumber *> *freed = [NSMutableArray array];
-        for (CCSpaceEntry *e in parts) [freed addObject:@([engine removeEntry:e useTrash:trash])];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            long long total = 0;
-            for (NSUInteger i = 0; i < parts.count; i++) {
-                [self->_busy removeObject:parts[i]];
-                if (report == self.report) [self account:parts[i] freed:freed[i].longLongValue trash:trash];
-                total += freed[i].longLongValue;
-            }
-            [self finishRemoval:total trash:trash];
-            if (total > 0)
-                [NSNotificationCenter.defaultCenter postNotificationName:CCModelToastNotification object:M()
-                                                                userInfo:@{ @"symbol": @"checkmark", @"text": LF(@"toast.freed", CCFormatBytes(total)) }];
-            [self changed];
-        });
-    });
-}
 
 - (void)remove:(CCSpaceEntry *)entry completion:(void (^)(BOOL))completion {
     if (!self.report || self.analyzing || [_busy containsObject:entry] || !entry.canDelete) {
@@ -614,7 +561,7 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
         b.fontSize = 12;
         b.symbolSize = 12;
     }
-    _clean.onClick = ^{ M().page = CCPageDashboard; };
+    _clean.onClick = ^{ [M() cleanFromDisk:weak.entry.targetId]; };
     _copy.onClick = ^{ [D() copyCommand:weak.entry]; };
     _reveal = [CCButton buttonWithStyle:CCButtonIcon title:nil symbol:@"folder"];
     _reveal.onClick = ^{ [M() revealPath:weak.entry.path]; };
@@ -932,12 +879,13 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
     status.alignment = NSLayoutAttributeTop;
     CCIcon *shield = [CCIcon symbol:@"checkmark.shield" size:14 weight:NSFontWeightSemibold role:CCRoleSuccess];
     _safeText = [CCLabel text:@"" size:13 weight:NSFontWeightSemibold role:CCRoleSuccess];
-    _removeSafe = [CCButton buttonWithStyle:CCButtonSuccess title:nil symbol:@"trash"];
-    _removeSafe.locKey = @"disk.removeSafe";
+    _removeSafe = [CCButton buttonWithStyle:CCButtonSuccess title:nil symbol:@"sparkles"];
+    _removeSafe.locKey = @"disk.cleanNow";
     _removeSafe.padding = NSEdgeInsetsMake(10, 16, 10, 16);
     _removeSafe.fontSize = 13;
     _removeSafe.symbolSize = 13;
-    _removeSafe.onClick = ^{ [D() removeSafe]; };
+    // The same clean as Overview's button, of what Overview shows: one number for what the app can clean.
+    _removeSafe.onClick = ^{ [M() clean]; };
     _safeGroup = CCHStack(@[ shield, _safeText, CCSpacer(), _removeSafe ], 6);
     [_safeGroup setCustomSpacing:14 afterView:_safeText];
 
@@ -1046,9 +994,10 @@ static BOOL IsCleanable(CCSpaceEntry *e) { return [e.identifier isEqualToString:
 
     _status.stringValue = d.statusText;
     _spinner.hidden = !analyzing;
-    long long safe = [d safeBytes];
-    _safeText.stringValue = LF(@"disk.safe", CCFormatBytes(safe));
-    _safeGroup.hidden = !r || analyzing || safe <= 0;
+    CCModel *m = M();
+    long long cleanable = m.hasResults && !m.scanning ? m.cleanableBytes : 0;
+    _safeText.stringValue = LF(@"disk.cleanable", CCFormatBytes(cleanable));
+    _safeGroup.hidden = !r || analyzing || !m.canClean;
 
     [self syncRows:r];
     [self applyFilter:r];
